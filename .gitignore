@@ -79,3 +79,17 @@ scripts/archive_step2_whitelist.py
 scripts/cleanup_step1_whitelist.py
 scripts/debug_groq_api.py
 scripts/archive_artifacts.py
+
+cursorrules
+AUDIT.md
+REPO_TREE.md
+Repo_Tree._Details.md
+data/
+reports/
+human_reports/
+demo_sources/
+_PROJECT_TRASH/
+_ARCHIVE_TO_MOVE_OUT_*/
+PUBLISH_*
+MIGRATION_MANIFEST*
+rollback.sh
