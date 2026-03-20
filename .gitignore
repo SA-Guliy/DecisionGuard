@@ -74,3 +74,8 @@ rollback.sh
 PUBLISH_WHITELIST.txt
 PUBLISH_DENYLIST.txt
 PUBLISH_MANIFEST.md
+
+scripts/archive_step2_whitelist.py
+scripts/cleanup_step1_whitelist.py
+scripts/debug_groq_api.py
+scripts/archive_artifacts.py
