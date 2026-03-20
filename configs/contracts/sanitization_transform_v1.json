@@ -1,0 +1,13 @@
+{
+  "version": "sanitization_transform_v1",
+  "transform_mode": "vectorized_placeholder_map",
+  "placeholder_prefix": "__SAN",
+  "max_replacements_per_text": 2000,
+  "require_vectorization_for_cloud": true,
+  "response_deobfuscation_required": true,
+  "pattern_groups": [
+    "secrets",
+    "identifiers",
+    "numeric_values"
+  ]
+}

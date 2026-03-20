@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExperimentContractV2",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "estimand_id",
+    "business_goal_id",
+    "primary_metric_id",
+    "metric_semantics_id",
+    "randomization_unit",
+    "analysis_unit",
+    "arms",
+    "allocation",
+    "pre_period_weeks",
+    "wash_in_days",
+    "attribution_window_rule",
+    "alpha",
+    "power_target",
+    "mde_target",
+    "test_side"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "estimand_id": { "type": "string", "minLength": 1 },
+    "business_goal_id": { "type": "string", "minLength": 1 },
+    "primary_metric_id": { "type": "string", "minLength": 1 },
+    "metric_semantics_id": { "type": "string", "minLength": 1 },
+    "randomization_unit": { "type": "string", "enum": ["customer", "store", "store_week"] },
+    "analysis_unit": { "type": "string", "enum": ["customer", "store", "store_week"] },
+    "arms": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "type": "string" }
+    },
+    "allocation": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+    },
+    "pre_period_weeks": { "type": "integer", "minimum": 0 },
+    "wash_in_days": { "type": "integer", "minimum": 0 },
+    "attribution_window_rule": { "type": "string", "minLength": 1 },
+    "alpha": { "type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 1.0 },
+    "power_target": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "mde_target": { "type": "number", "minimum": 0.0 },
+    "test_side": { "type": "string", "enum": ["one-sided", "two-sided"] }
+  },
+  "additionalProperties": true
+}

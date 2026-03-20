@@ -1,0 +1,40 @@
+{
+  "version": "consolidated_report_v1.contract.v1",
+  "report_version": "consolidated_report_v1",
+  "required_sections": [
+    "Portfolio Snapshot",
+    "Go/No-Go",
+    "Top Systemic Risks",
+    "Top Repeated Mitigations",
+    "Consolidated Decisions (Grouped)"
+  ],
+  "summary_source_policy": "summary_only",
+  "required_decision_group_order": [
+    "GO",
+    "HOLD",
+    "STOP"
+  ],
+  "required_case_fields": [
+    "run_id",
+    "decision",
+    "query",
+    "executive_summary",
+    "go_no_go_rationale",
+    "risk_signals",
+    "recommended_actions",
+    "reasoning_observed_facts",
+    "reasoning_causal_interpretation",
+    "reasoning_why_not_opposite_decision",
+    "reasoning_confidence",
+    "reasoning_evidence_quality",
+    "reasoning_decision_tradeoffs",
+    "reasoning_mitigations",
+    "reasoning_uncertainty_gaps"
+  ],
+  "required_reasoning_quality_fields": [
+    "reasoning_confidence.score",
+    "reasoning_confidence.label",
+    "reasoning_evidence_quality.score",
+    "reasoning_evidence_quality.label"
+  ]
+}

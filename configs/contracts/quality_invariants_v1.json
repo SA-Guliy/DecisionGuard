@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QualityInvariantsV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "status",
+    "error_code",
+    "checks",
+    "blocked_by",
+    "required_actions",
+    "generated_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["PASS", "FAIL"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "blocked_by": {"type": "array", "items": {"type": "string"}},
+    "required_actions": {"type": "array", "items": {"type": "string"}},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

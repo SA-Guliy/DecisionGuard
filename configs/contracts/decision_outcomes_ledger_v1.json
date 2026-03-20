@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision_outcomes_ledger_v1.json",
+  "title": "Decision Outcomes Ledger v1",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "generated_at",
+    "ground_truth_source",
+    "ground_truth_refs",
+    "label_window_days",
+    "sample_size",
+    "would_have_prevented_loss_rate",
+    "decision_regret_rate",
+    "outcomes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": "decision_outcomes_ledger_v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "ground_truth_source": {"type": "string", "minLength": 1},
+    "ground_truth_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "label_window_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+    "sample_size": {"type": "integer", "minimum": 0},
+    "would_have_prevented_loss_rate": {"type": "number", "minimum": 0, "maximum": 1},
+    "decision_regret_rate": {"type": "number", "minimum": 0, "maximum": 1},
+    "outcomes": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "decision",
+          "actual_outcome",
+          "prevented_loss",
+          "regret"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "decision_id": {"type": "string", "minLength": 1},
+          "decision": {"type": "string", "minLength": 1},
+          "actual_outcome": {"type": "string", "minLength": 1},
+          "prevented_loss": {"type": "boolean"},
+          "regret": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

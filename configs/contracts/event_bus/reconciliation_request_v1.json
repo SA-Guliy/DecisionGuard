@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReconciliationRequestV1",
+  "type": "object",
+  "required": [
+    "event_id",
+    "run_id",
+    "experiment_id",
+    "reconciliation_id",
+    "source_event_id",
+    "attempt_no",
+    "max_attempts",
+    "backoff_seconds",
+    "payload_ref",
+    "max_payload_bytes",
+    "chunk_ref_required",
+    "reconciliation_status",
+    "loop_guard_key",
+    "requested_at"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "reconciliation_id": { "type": "string", "minLength": 1 },
+    "source_event_id": { "type": "string", "minLength": 1 },
+    "attempt_no": { "type": "integer", "minimum": 1 },
+    "max_attempts": { "type": "integer", "minimum": 1 },
+    "backoff_seconds": { "type": "integer", "minimum": 0 },
+    "payload_ref": { "type": "string", "minLength": 1 },
+    "max_payload_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+    "chunk_ref_required": { "type": "boolean", "const": true },
+    "reconciliation_status": {
+      "type": "string",
+      "enum": ["REQUESTED", "IN_PROGRESS", "COMPLETED", "EXPIRED", "FAILED"]
+    },
+    "loop_guard_key": { "type": "string", "minLength": 1 },
+    "requested_at": { "type": "string", "format": "date-time" }
+  },
+  "not": {
+    "required": ["payload"]
+  },
+  "additionalProperties": true
+}

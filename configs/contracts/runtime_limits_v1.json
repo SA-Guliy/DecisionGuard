@@ -1,0 +1,19 @@
+{
+  "version": "runtime_limits_v1",
+  "policy": {
+    "phase": "p1_runtime_limits_contract",
+    "fail_mode": "fail_safe_hold_or_stop"
+  },
+  "limits": {
+    "concurrency": 1,
+    "max_batch_size": 500,
+    "max_payload_bytes": 1048576,
+    "chunk_ref_required": true,
+    "max_reconcile_attempts": 3,
+    "backoff_schedule": [60, 300, 900],
+    "reconciliation_ttl_hours": 24,
+    "sla_mode": "batch_nightly",
+    "inline_payload_forbidden": true,
+    "runtime_guard_report_required": true
+  }
+}

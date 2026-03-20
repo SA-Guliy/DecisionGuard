@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ABUnitOutcomesV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "analysis_unit_id",
+    "arm",
+    "time_block",
+    "metrics",
+    "covariates"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "analysis_unit_id": { "type": "string", "minLength": 1 },
+    "arm": { "type": "string", "minLength": 1 },
+    "time_block": { "type": "string", "minLength": 1 },
+    "metrics": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": ["number", "integer", "null"] }
+    },
+    "covariates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["number", "integer", "string", "boolean", "null"]
+      }
+    }
+  },
+  "additionalProperties": true
+}

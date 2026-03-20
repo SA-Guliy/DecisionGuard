@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GuardrailObservationsV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "arm",
+    "metric_id",
+    "value",
+    "threshold",
+    "status",
+    "window"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "arm": { "type": "string", "minLength": 1 },
+    "metric_id": { "type": "string", "minLength": 1 },
+    "value": { "type": ["number", "integer", "null"] },
+    "threshold": { "type": ["number", "integer", "string", "null"] },
+    "status": { "type": "string", "enum": ["PASS", "WARN", "FAIL", "MISSING"] },
+    "window": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": true
+}

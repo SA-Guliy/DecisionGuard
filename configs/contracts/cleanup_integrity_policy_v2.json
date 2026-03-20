@@ -1,0 +1,13 @@
+{
+  "version": "cleanup_integrity_policy_v2",
+  "policy": {
+    "strict_integrity_default": true,
+    "missing_sidecar_action": "fail_non_zero",
+    "require_sidecar_for": [
+      "reports/**/POC_DECISION_CARD_SPRINT2.md",
+      "reports/**/*_poc_sprint2.json",
+      "data/**/*_poc_sprint2.json"
+    ],
+    "enforcement": "fail_closed"
+  }
+}

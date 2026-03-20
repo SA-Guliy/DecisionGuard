@@ -1,0 +1,14 @@
+{
+  "version": "sanitization_policy_v1",
+  "storage_policy": "security_obfuscation_map_only",
+  "encrypted_at_rest": true,
+  "kms_key_ref": "kms://runtime/security/obfuscation-map",
+  "ttl_hours": 24,
+  "allowed_readers": [
+    "security",
+    "compliance",
+    "runtime_orchestrator"
+  ],
+  "key_rotation_days": 30,
+  "audit_log_required": true
+}

@@ -1,0 +1,480 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Domain Template Contract v1",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domain_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "template_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "goal_definitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/goal_definition_row"
+      }
+    },
+    "goals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/goal_row"
+      }
+    },
+    "metrics": {
+      "$ref": "#/$defs/metrics"
+    },
+    "mappings": {
+      "$ref": "#/$defs/mappings"
+    },
+    "target_metric_to_primary_metric": {
+      "$ref": "#/$defs/target_metric_map"
+    },
+    "guardrails": {
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/guardrail_row"
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/guardrail_row"
+            }
+          }
+        }
+      ]
+    },
+    "guardrails_by_component": {
+      "$ref": "#/$defs/guardrails_by_component"
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "number",
+          "integer",
+          "string",
+          "boolean",
+          "object",
+          "array"
+        ]
+      }
+    },
+    "doctor": {
+      "$ref": "#/$defs/doctor"
+    },
+    "captain": {
+      "$ref": "#/$defs/captain"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "version",
+        "template_id",
+        "domain",
+        "goals",
+        "metrics",
+        "target_metric_to_primary_metric",
+        "guardrails_by_component",
+        "captain"
+      ]
+    },
+    {
+      "required": [
+        "contract_version",
+        "domain_id",
+        "goal_definitions",
+        "mappings",
+        "guardrails",
+        "captain"
+      ]
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "metric_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_metric_map": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_name"
+      }
+    },
+    "goal_definition_row": {
+      "type": "object",
+      "required": [
+        "goal_id",
+        "target_metric_alias",
+        "primary_metric"
+      ],
+      "properties": {
+        "goal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_metric_alias": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "primary_metric": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "expected_direction": {
+          "type": "string",
+          "enum": [
+            "increase",
+            "decrease",
+            ""
+          ]
+        },
+        "metric_family": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "secondary_metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "required_denominators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "goal_row": {
+      "type": "object",
+      "required": [
+        "goal_id",
+        "target_metric",
+        "default_primary_metric"
+      ],
+      "properties": {
+        "goal_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_metric": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "default_primary_metric": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "commander_default_metric": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "expected_direction": {
+          "type": "string",
+          "enum": [
+            "increase",
+            "decrease",
+            ""
+          ]
+        },
+        "risk_note": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "goal_metric_groups"
+      ],
+      "properties": {
+        "primary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "required_denominators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "goal_metric_groups": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/metric_name"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mappings": {
+      "type": "object",
+      "required": [
+        "target_metric_to_primary_metric"
+      ],
+      "properties": {
+        "target_metric_to_primary_metric": {
+          "$ref": "#/$defs/target_metric_map"
+        }
+      },
+      "additionalProperties": true
+    },
+    "guardrail_row": {
+      "type": "object",
+      "required": [
+        "metric",
+        "op",
+        "threshold"
+      ],
+      "properties": {
+        "metric": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            ">=",
+            "<=",
+            ">",
+            "<"
+          ]
+        },
+        "threshold": {
+          "type": [
+            "number",
+            "integer",
+            "string"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "HARD",
+            "WARN",
+            "INFO"
+          ]
+        },
+        "dynamic_baseline_ratio": {
+          "type": [
+            "number",
+            "integer"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "guardrails_by_component": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/$defs/guardrail_row"
+        }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "properties": {
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "number",
+              "integer",
+              "string",
+              "boolean"
+            ]
+          }
+        },
+        "required_ready_now": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "blocked_phase2_metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric_name"
+          }
+        },
+        "captain_issue_policies": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "on_hard_fail": {
+                "type": "string",
+                "enum": [
+                  "STOP",
+                  "HOLD_NEED_DATA",
+                  "HOLD_RISK",
+                  "RUN_AB",
+                  ""
+                ]
+              },
+              "on_warn": {
+                "type": "string",
+                "enum": [
+                  "STOP",
+                  "HOLD_NEED_DATA",
+                  "HOLD_RISK",
+                  "RUN_AB",
+                  ""
+                ]
+              },
+              "on_info": {
+                "type": "string",
+                "enum": [
+                  "STOP",
+                  "HOLD_NEED_DATA",
+                  "HOLD_RISK",
+                  "RUN_AB",
+                  ""
+                ]
+              },
+              "risk_type": {
+                "type": "string"
+              },
+              "mitigation": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "run_config_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "truthy_values": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required_mode_tag_contains": {
+                "type": "string"
+              },
+              "decision_on_fail": {
+                "type": "string",
+                "enum": [
+                  "STOP",
+                  "HOLD_NEED_DATA",
+                  "HOLD_RISK",
+                  "RUN_AB"
+                ]
+              },
+              "reason_code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "HARD_FAIL",
+                  "WARN",
+                  "INFO"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "risk_type": {
+                "type": "string"
+              },
+              "check_name": {
+                "type": "string"
+              },
+              "mitigation": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "captain": {
+      "type": "object",
+      "required": [
+        "allowed_sql_tables",
+        "sql_step_templates"
+      ],
+      "properties": {
+        "allowed_sql_tables": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$"
+          }
+        },
+        "sql_step_templates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

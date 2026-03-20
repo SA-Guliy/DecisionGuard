@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateResultV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "gate_name",
+    "status",
+    "error_code",
+    "blocked_by",
+    "required_actions",
+    "generated_at"
+  ],
+  "properties": {
+    "version": {"type": "string", "const": "gate_result_v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "gate_name": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "blocked_by": {"type": "array", "items": {"type": "string"}},
+    "required_actions": {"type": "array", "items": {"type": "string"}},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,11 @@
+{
+  "version": "golden_pair_policy_v2",
+  "policy": {
+    "golden_root": "reports/L1_ops/demo_golden_example",
+    "allowed_card_glob": "reports/L1_ops/demo_golden_example/POC_DECISION_CARD_SPRINT2.md",
+    "allowed_json_glob": "reports/L1_ops/demo_golden_example/*_poc_sprint2.json",
+    "max_allowed_json_files": 1,
+    "sidecar_required": true,
+    "enforcement": "fail_closed"
+  }
+}

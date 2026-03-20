@@ -1,0 +1,8 @@
+{
+  "min_gp_margin": 0.0,
+  "min_fill_rate_units": 0.9,
+  "max_oos_lost_gmv_rate": 0.2,
+  "min_orders_cnt": 800,
+  "min_active_buyers_avg": 200,
+  "mvp_mode_one_experiment": true
+}

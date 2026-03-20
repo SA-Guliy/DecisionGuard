@@ -1,0 +1,35 @@
+{
+  "version": "security_profile_contract.v1",
+  "policy": {
+    "phase": "phase2_integrity_and_runtime_hardening"
+  },
+  "profiles": {
+    "production": {
+      "integrity_mode": "required",
+      "require_json_manifest": true,
+      "strict_manifest_scope": true,
+      "fail_closed_pre_publish_audit": true,
+      "fail_closed_verify_acceptance": true,
+      "fail_closed_integrity_finalize": true
+    },
+    "lightweight": {
+      "integrity_mode": "required",
+      "require_json_manifest": true,
+      "strict_manifest_scope": true,
+      "fail_closed_pre_publish_audit": true,
+      "fail_closed_verify_acceptance": true,
+      "fail_closed_integrity_finalize": true
+    }
+  },
+  "manifest_scope": {
+    "ignore_globs": [
+      "reports/L1_ops/*/artifact_manifest.json",
+      "data/agent_quality/*_pre_publish_audit.json",
+      "data/acceptance/*_acceptance.json"
+    ]
+  },
+  "dsn_policy": {
+    "service_based_required": true,
+    "forbid_inline_credentials": true
+  }
+}

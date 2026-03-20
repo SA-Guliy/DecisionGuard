@@ -1,0 +1,14 @@
+{
+  "contract_version": "active_experiments.v1",
+  "experiments": [
+    {
+      "name": "example_store_pricing_v1",
+      "unit": "store",
+      "lever_type": "pricing",
+      "scope": ["A"],
+      "start_date": "2026-02-01",
+      "end_date": "2026-02-07",
+      "status": "active"
+    }
+  ]
+}

@@ -1,0 +1,423 @@
+{
+  "contract_version": "domain_template.v2",
+  "template_id": "darkstore_fresh_v1",
+  "template_metadata": {
+    "domain_name": "darkstore_fresh",
+    "description": "Open-source sample from the Proprietary Domain Library. Focus: Grocery delivery unit economics.",
+    "version": "2.0.0"
+  },
+  "metrics_dictionary": {
+    "aov": {
+      "role": "primary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "currency",
+      "business_meaning": "Average Order Value"
+    },
+    "writeoff_rate_vs_requested_units": {
+      "role": "primary_target",
+      "direction_is_good": "decrease",
+      "scale": "percentage",
+      "unit": "ratio_0_1",
+      "canonical_denominator": "requested_units",
+      "business_meaning": "Writeoff units normalized by requested units"
+    },
+    "new_buyers_7d": {
+      "role": "primary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "count",
+      "business_meaning": "New buyers in first 7 days"
+    },
+    "fill_rate_units": {
+      "role": "guardrail",
+      "direction_is_good": "increase",
+      "scale": "percentage",
+      "unit": "ratio_0_1",
+      "hard_threshold_min": 0.9,
+      "breach_action": "STOP",
+      "business_meaning": "Fulfilled units over requested units"
+    },
+    "oos_lost_gmv_rate": {
+      "role": "guardrail",
+      "direction_is_good": "decrease",
+      "scale": "percentage",
+      "unit": "ratio_0_1",
+      "hard_threshold_max": 0.1,
+      "breach_action": "STOP",
+      "business_meaning": "Lost GMV due to out-of-stock over GMV"
+    },
+    "gp_margin": {
+      "role": "guardrail",
+      "direction_is_good": "increase",
+      "scale": "percentage",
+      "unit": "ratio_0_1",
+      "hard_threshold_min": 0.0,
+      "breach_action": "HOLD_NEED_DATA",
+      "business_meaning": "Gross profit margin"
+    },
+    "gmv": {
+      "role": "secondary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "currency",
+      "business_meaning": "Gross merchandise value"
+    },
+    "gp": {
+      "role": "secondary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "currency",
+      "business_meaning": "Gross profit"
+    },
+    "orders_cnt": {
+      "role": "secondary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "count",
+      "business_meaning": "Orders count"
+    },
+    "active_buyers_avg": {
+      "role": "secondary_target",
+      "direction_is_good": "increase",
+      "scale": "absolute",
+      "unit": "count",
+      "business_meaning": "Average active buyers"
+    },
+    "churn_rate": {
+      "role": "secondary_target",
+      "direction_is_good": "decrease",
+      "scale": "percentage",
+      "unit": "ratio_0_1",
+      "business_meaning": "Buyer churn rate"
+    },
+    "writeoff_units": {
+      "role": "secondary_target",
+      "direction_is_good": "decrease",
+      "scale": "absolute",
+      "unit": "count",
+      "business_meaning": "Writeoff units"
+    },
+    "writeoff_cogs": {
+      "role": "secondary_target",
+      "direction_is_good": "decrease",
+      "scale": "absolute",
+      "unit": "currency",
+      "canonical_denominator": "received_cogs",
+      "business_meaning": "Writeoff COGS"
+    }
+  },
+  "goals_taxonomy": {
+    "efficiency_track": [
+      "writeoff_rate_vs_requested_units",
+      "fill_rate_units",
+      "oos_lost_gmv_rate"
+    ],
+    "growth_track": [
+      "aov",
+      "gmv",
+      "gp_margin",
+      "orders_cnt"
+    ],
+    "retention_track": [
+      "new_buyers_7d",
+      "active_buyers_avg",
+      "churn_rate"
+    ]
+  },
+  "evaluation_rules": {
+    "require_canonical_denominator": true,
+    "fallback_status_on_api_failure": "HOLD_NEED_DATA"
+  },
+  "data_mapping_rules": {
+    "forbid_implicit_fallback": true,
+    "on_mismatch_action": "HOLD_NEED_DATA",
+    "writeoff_reason_column": "writeoff_reason_norm",
+    "required_sources": {
+      "step1.step1_writeoff_log": {
+        "required_columns": [
+          "run_id",
+          "date",
+          "store_id",
+          "product_id",
+          "qty_writeoff",
+          "writeoff_cogs",
+          "writeoff_reason_norm",
+          "lot_expiry_date",
+          "batch_id"
+        ]
+      }
+    }
+  },
+  "runtime_bindings": {
+    "metrics": {
+      "primary": [
+        "writeoff_rate_vs_requested_units",
+        "aov",
+        "new_buyers_7d"
+      ],
+      "secondary": [
+        "gmv",
+        "gp",
+        "gp_margin",
+        "gp_per_order",
+        "orders_cnt",
+        "fill_rate_units",
+        "oos_lost_gmv_rate",
+        "active_buyers_avg",
+        "churn_rate",
+        "writeoff_units",
+        "writeoff_cogs",
+        "lost_gmv_oos"
+      ],
+      "required_denominators": [
+        "requested_units",
+        "received_cogs"
+      ],
+      "goal_metric_groups": {
+        "goal1": [
+          "goal1_writeoff",
+          "writeoff_units",
+          "writeoff_cogs",
+          "writeoff_rate_adj",
+          "writeoff_rate_vs_requested_units",
+          "fill_rate_units",
+          "oos_lost_gmv_rate"
+        ],
+        "goal2": [
+          "goal2_aov",
+          "aov",
+          "gmv",
+          "gp_margin",
+          "gp",
+          "gp_per_order",
+          "orders_cnt"
+        ],
+        "goal3": [
+          "goal3_buyers",
+          "buyers",
+          "new_buyers_7d",
+          "active_buyers_avg",
+          "churn_rate",
+          "rep_mean"
+        ]
+      }
+    },
+    "goals": [
+      {
+        "goal_id": "goal1",
+        "target_metric": "goal1_writeoff",
+        "default_primary_metric": "writeoff_rate_vs_requested_units",
+        "commander_default_metric": "writeoff_units",
+        "expected_direction": "decrease",
+        "risk_note": "Writeoff optimization can degrade service/GMV if availability is harmed."
+      },
+      {
+        "goal_id": "goal2",
+        "target_metric": "goal2_aov",
+        "default_primary_metric": "aov",
+        "commander_default_metric": "aov",
+        "expected_direction": "increase",
+        "risk_note": "Revenue tactics can hurt margin or service quality."
+      },
+      {
+        "goal_id": "goal3",
+        "target_metric": "goal3_buyers",
+        "default_primary_metric": "new_buyers_7d",
+        "commander_default_metric": "new_buyers_7d",
+        "expected_direction": "increase",
+        "risk_note": "Buyer growth can cannibalize margin and operations if quality drops."
+      }
+    ],
+    "target_metric_to_primary_metric": {
+      "goal1_writeoff": "writeoff_rate_vs_requested_units",
+      "goal2_aov": "aov",
+      "goal3_buyers": "new_buyers_7d"
+    },
+    "metric_to_goal": {
+      "goal1_writeoff": "goal1",
+      "writeoff_units": "goal1",
+      "writeoff_cogs": "goal1",
+      "writeoff_rate_adj": "goal1",
+      "writeoff_rate_vs_requested_units": "goal1",
+      "fill_rate_units": "goal1",
+      "oos_lost_gmv_rate": "goal1",
+      "goal2_aov": "goal2",
+      "aov": "goal2",
+      "gmv": "goal2",
+      "gp_margin": "goal2",
+      "gp": "goal2",
+      "gp_per_order": "goal2",
+      "orders_cnt": "goal2",
+      "goal3_buyers": "goal3",
+      "buyers": "goal3",
+      "new_buyers_7d": "goal3",
+      "active_buyers_avg": "goal3",
+      "churn_rate": "goal3",
+      "rep_mean": "goal3"
+    },
+    "guardrails_by_component": {
+      "doctor_variance": [
+        {
+          "metric": "fill_rate_units",
+          "op": ">=",
+          "threshold": 0.9
+        },
+        {
+          "metric": "gp_margin",
+          "op": ">=",
+          "threshold": 0.0
+        },
+        {
+          "metric": "gmv",
+          "op": ">=",
+          "threshold": 0.0,
+          "dynamic_baseline_ratio": 0.99
+        },
+        {
+          "metric": "oos_lost_gmv_rate",
+          "op": "<=",
+          "threshold": 0.1
+        }
+      ],
+      "commander_priority": [
+        {
+          "metric": "fill_rate_units",
+          "op": ">=",
+          "threshold": 0.9
+        },
+        {
+          "metric": "gp_margin",
+          "op": ">=",
+          "threshold": 0.0
+        },
+        {
+          "metric": "gmv",
+          "op": ">=",
+          "threshold": 0.0,
+          "dynamic_baseline_ratio": 0.99
+        },
+        {
+          "metric": "oos_lost_gmv_rate",
+          "op": "<=",
+          "threshold": 0.1
+        }
+      ],
+      "experiment_evaluator": [
+        {
+          "metric": "fill_rate_units",
+          "op": ">=",
+          "threshold": 0.92
+        },
+        {
+          "metric": "gp_margin",
+          "op": ">=",
+          "threshold": 0.0
+        },
+        {
+          "metric": "oos_lost_gmv_rate",
+          "op": "<=",
+          "threshold": 0.2
+        }
+      ]
+    },
+    "doctor": {
+      "thresholds": {
+        "min_gp_margin": 0.0,
+        "min_fill_rate_units": 0.9,
+        "max_oos_lost_gmv_rate": 0.1,
+        "min_orders_cnt": 800,
+        "min_active_buyers_avg": 200,
+        "mvp_mode_one_experiment": true
+      },
+      "required_ready_now": [
+        "gmv",
+        "gp",
+        "gp_margin",
+        "orders_cnt",
+        "aov",
+        "fill_rate_units",
+        "oos_lost_gmv_rate"
+      ],
+      "blocked_phase2_metrics": [
+        "writeoff_rate",
+        "writeoff_units",
+        "writeoff_cogs",
+        "days_to_expiry_dist",
+        "aged_inventory_share",
+        "doi",
+        "inventory_turnover",
+        "competitor_index"
+      ],
+      "captain_issue_policies": {
+        "inventory_closing_nonnegative_est": {
+          "on_hard_fail": "STOP",
+          "on_warn": "HOLD_RISK",
+          "on_info": "",
+          "risk_type": "realism_contract",
+          "mitigation": "Fix inventory-physics contract violations before any new experiment."
+        },
+        "competitor_rows_present_when_enabled": {
+          "on_hard_fail": "STOP",
+          "on_warn": "HOLD_RISK",
+          "on_info": "",
+          "risk_type": "realism_contract",
+          "mitigation": "Restore competitor-data integrity invariants before proceeding."
+        },
+        "competitor_bounds_valid": {
+          "on_hard_fail": "STOP",
+          "on_warn": "HOLD_RISK",
+          "on_info": "",
+          "risk_type": "realism_contract",
+          "mitigation": "Restore competitor-data integrity invariants before proceeding."
+        },
+        "competitor_shared_across_stores_consistent": {
+          "on_hard_fail": "STOP",
+          "on_warn": "HOLD_RISK",
+          "on_info": "",
+          "risk_type": "realism_contract",
+          "mitigation": "Restore competitor-data integrity invariants before proceeding."
+        }
+      },
+      "run_config_rules": [
+        {
+          "field": "enable_competitor_prices",
+          "truthy_values": [
+            "1",
+            "true",
+            "True"
+          ],
+          "required_mode_tag_contains": "competitor",
+          "decision_on_fail": "HOLD_RISK",
+          "reason_code": "run_config_mode_policy_violation",
+          "severity": "WARN",
+          "message": "Template policy requires dedicated mode_tag for competitor-enabled runs.",
+          "risk_type": "confounding",
+          "check_name": "mode_tag_missing_for_competitor_flag",
+          "mitigation": "Set mode_tag to competitor-isolated mode or disable competitor flag."
+        }
+      ]
+    },
+    "captain": {
+      "allowed_sql_tables": [
+        "step1.vw_valid_orders",
+        "step1.vw_valid_order_items",
+        "step1.vw_valid_customer_daily",
+        "step1.step1_orders",
+        "step1.step1_order_items",
+        "step1.step1_customer_daily",
+        "step1.step1_run_registry",
+        "raw.raw_orders_stream",
+        "raw.raw_products"
+      ],
+      "sql_step_templates": [
+        "SELECT ... FROM step1.vw_valid_orders WHERE run_id = '<run_id>';",
+        "SELECT ... FROM step1.vw_valid_order_items WHERE run_id = '<run_id>';",
+        "SELECT ... FROM step1.vw_valid_customer_daily WHERE run_id = '<run_id>';",
+        "SELECT ... FROM step1.step1_orders WHERE run_id = '<run_id>';",
+        "SELECT ... FROM step1.step1_order_items WHERE run_id = '<run_id>';",
+        "SELECT ... FROM step1.step1_customer_daily WHERE run_id = '<run_id>';"
+      ]
+    }
+  }
+}

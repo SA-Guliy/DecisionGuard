@@ -1,0 +1,18 @@
+{
+  "version": "artifact_spam_prevention_v2",
+  "policy": {
+    "scope": "batch_working_contour",
+    "forbidden_globs": [
+      "reports/**/POC_DECISION_CARD_SPRINT2.md",
+      "data/**/*_poc_sprint2.json",
+      "reports/**/*_poc_sprint2.json"
+    ],
+    "excluded_globs": [
+      "reports/L1_ops/demo_golden_example/POC_DECISION_CARD_SPRINT2.md",
+      "reports/L1_ops/demo_golden_example/*_poc_sprint2.json",
+      "reports/L1_ops/demo_golden_example/*_poc_sprint2.json.sha256",
+      "_PROJECT_TRASH/**"
+    ],
+    "enforcement": "fail_closed"
+  }
+}

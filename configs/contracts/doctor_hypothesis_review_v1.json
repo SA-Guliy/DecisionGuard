@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DoctorHypothesisReviewV1",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "generated_at",
+    "doctor_hypothesis_review",
+    "hypothesis_review_summary",
+    "review_blockers"
+  ],
+  "properties": {
+    "version": {
+      "const": "doctor_hypothesis_review_v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "doctor_hypothesis_review": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "hypothesis_id",
+          "target_metric",
+          "impact_class",
+          "deterministic_verdict",
+          "final_verdict",
+          "evidence_refs",
+          "rationale",
+          "mitigation"
+        ],
+        "properties": {
+          "hypothesis_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_metric": {
+            "type": "string"
+          },
+          "impact_class": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "unknown"
+            ]
+          },
+          "deterministic_verdict": {
+            "type": "string",
+            "enum": [
+              "SUPPORTED",
+              "WEAK",
+              "REFUTED",
+              "UNTESTABLE"
+            ]
+          },
+          "final_verdict": {
+            "type": "string",
+            "enum": [
+              "SUPPORTED",
+              "WEAK",
+              "REFUTED",
+              "UNTESTABLE"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "mitigation": {
+            "type": "string"
+          },
+          "expected_uplift_range": {
+            "type": "string"
+          },
+          "observed_effect_pct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "conflict_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "hypothesis_review_summary": {
+      "type": "object",
+      "required": [
+        "total_count",
+        "supported_count",
+        "weak_count",
+        "refuted_count",
+        "untestable_count",
+        "refuted_high_count",
+        "verification_quality_score"
+      ],
+      "properties": {
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "supported_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weak_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "untestable_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted_high_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted_high_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "untestable_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "weak_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "verification_quality_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "review_blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

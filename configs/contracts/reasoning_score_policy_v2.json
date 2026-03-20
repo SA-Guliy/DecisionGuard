@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReasoningScorePolicyV2",
+  "type": "object",
+  "required": [
+    "run_id",
+    "status",
+    "error_code",
+    "effective_real_llm_agents_count",
+    "decision_ceiling",
+    "blocked_by",
+    "required_actions",
+    "generated_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "effective_real_llm_agents_count": {"type": "integer", "minimum": 0},
+    "decision_ceiling": {"type": "string", "enum": ["HOLD_NEED_DATA", "HOLD_RISK", "RUN_AB", "ROLLOUT_CANDIDATE", "STOP"]},
+    "blocked_by": {"type": "array", "items": {"type": "string"}},
+    "required_actions": {"type": "array", "items": {"type": "string"}},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

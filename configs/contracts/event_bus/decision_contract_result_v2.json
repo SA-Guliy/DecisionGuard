@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionContractResultV2",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "decision",
+    "blocked_by",
+    "reason_codes",
+    "required_fix_plan",
+    "trace_refs"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "decision": {
+      "type": "string",
+      "enum": ["STOP", "HOLD_NEED_DATA", "HOLD_RISK", "RUN_AB", "ROLLOUT_CANDIDATE"]
+    },
+    "blocked_by": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "required_fix_plan": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "trace_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

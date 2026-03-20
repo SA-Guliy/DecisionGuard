@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HandoffContractGuardV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "from_agent",
+    "to_agent",
+    "status",
+    "error_code",
+    "blocked_by",
+    "required_actions",
+    "generated_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "from_agent": {"type": "string", "const": "doctor"},
+    "to_agent": {"type": "string", "const": "evaluator"},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "blocked_by": {"type": "array", "items": {"type": "string"}},
+    "required_actions": {"type": "array", "items": {"type": "string"}},
+    "context_frame_ref": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

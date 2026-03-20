@@ -1,0 +1,27 @@
+{
+  "version": "decision_contract_v1",
+  "decisions": [
+    "STOP",
+    "HOLD_NEED_DATA",
+    "HOLD_RISK",
+    "RUN_AB",
+    "ROLLOUT_CANDIDATE"
+  ],
+  "required_fields": {
+    "doctor": [
+      "normalized_decision",
+      "assignment_status"
+    ],
+    "evaluator": [
+      "decision",
+      "assignment_status",
+      "blocked_by"
+    ],
+    "commander": [
+      "decision",
+      "normalized_decision",
+      "blocked_by",
+      "inputs_summary"
+    ]
+  }
+}

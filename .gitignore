@@ -1,0 +1,64 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.groq_secrets
+**/.groq_secrets
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Python cache / tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Runtime-generated artifacts
+data/logs/
+data/run_summaries/
+data/agent_reports/
+data/llm_reports/
+data/metrics_snapshots/
+data/batch_eval/
+data/cost/
+data/reconciliation/
+data/reports/
+data/agent_eval/
+data/runtime_guard/
+data/security/obfuscation_maps/
+data/agent_quality/
+github_publish/
+
+# Local DB and dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Keep core contracts/templates/docs trackable
+!configs/contracts/**/*.json
+!domain_templates/**/*.json
+!docs/**/*.md
+!README.md
+!ARCHITECTURE.md
+_PROJECT_TRASH/
+_ARCHIVE_TO_MOVE_OUT_*/
+WAVE*_DRYRUN_MANIFEST_*.md
+
+# Private PRD / strategy (must stay out of public repo)
+.cursor/prd/
+private_prd/
+internal_strategy/
+internal_business_metrics/

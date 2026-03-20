@@ -1,0 +1,16 @@
+{
+  "version": "retry_policy_v1",
+  "policy": {
+    "phase": "p1_retry_budget_contract",
+    "global_budget": {
+      "max_llm_calls_per_run": 12,
+      "max_llm_failures_per_run": 4,
+      "max_consecutive_failures_before_open_circuit": 2,
+      "circuit_cooldown_seconds": 1800
+    },
+    "on_exceed": {
+      "safe_decision": "HOLD_NEED_DATA",
+      "stop_pipeline": true
+    }
+  }
+}

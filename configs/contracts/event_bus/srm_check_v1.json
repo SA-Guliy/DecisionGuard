@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SRMCheckV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "expected_split",
+    "observed_counts_by_arm",
+    "test_name",
+    "p_value",
+    "imbalance_pp",
+    "status"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "expected_split": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+    },
+    "observed_counts_by_arm": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "test_name": { "type": "string", "minLength": 1 },
+    "p_value": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "imbalance_pp": { "type": "number", "minimum": 0.0 },
+    "status": { "type": "string", "enum": ["PASS", "WARN", "FAIL"] }
+  },
+  "additionalProperties": true
+}

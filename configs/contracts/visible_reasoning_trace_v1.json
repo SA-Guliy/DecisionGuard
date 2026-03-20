@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VisibleReasoningTraceV1",
+  "type": "object",
+  "required": [
+    "claims",
+    "gates_checked",
+    "unknowns"
+  ],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "statement",
+          "evidence_refs",
+          "alternatives_considered",
+          "falsifiability_test",
+          "decision_impact"
+        ],
+        "properties": {
+          "claim_id": { "type": "string" },
+          "statement": { "type": "string" },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "alternatives_considered": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "falsifiability_test": { "type": "string" },
+          "decision_impact": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "gates_checked": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

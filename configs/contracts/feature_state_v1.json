@@ -1,0 +1,13 @@
+{
+  "version": "feature_state_v1",
+  "policy": {
+    "phase": "p1_feature_state_lockdown",
+    "runtime_mode": "fail_closed"
+  },
+  "state": {
+    "weak_path_runtime": "DISABLED",
+    "reconciliation_runtime": "NOT_IMPLEMENTED",
+    "auto_decision_change": "FORBIDDEN",
+    "default_weak_path_ceiling": "HOLD_NEED_DATA"
+  }
+}

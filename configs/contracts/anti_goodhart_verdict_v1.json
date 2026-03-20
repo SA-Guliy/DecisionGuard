@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AntiGoodhartVerdictV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "status",
+    "error_code",
+    "anti_goodhart_triggered",
+    "blocked_by",
+    "required_actions",
+    "generated_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string", "minLength": 1},
+    "anti_goodhart_triggered": {"type": "boolean"},
+    "source_of_truth": {"type": "string", "const": "anti_goodhart_verdict_v1"},
+    "blocked_by": {"type": "array", "items": {"type": "string"}},
+    "required_actions": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "object"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

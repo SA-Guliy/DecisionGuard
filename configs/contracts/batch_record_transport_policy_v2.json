@@ -1,0 +1,11 @@
+{
+  "version": "batch_record_transport_policy_v2",
+  "policy": {
+    "stdout_ingest_forbidden": true,
+    "batch_record_out_required": true,
+    "staging_root": "data/batch_eval/staging",
+    "record_suffix": "_batch_record_v2.json",
+    "summary_source_only": "data/batch_eval/<batch_id>_summary.json",
+    "enforcement": "fail_closed"
+  }
+}

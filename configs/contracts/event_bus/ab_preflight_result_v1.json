@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ABPreflightResultV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "status",
+    "measurement_state",
+    "error_family",
+    "error_code",
+    "required_fields_missing",
+    "join_coverage",
+    "unit_alignment_status"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["PASS", "FAIL"] },
+    "measurement_state": { "type": "string", "enum": ["OBSERVABLE", "UNOBSERVABLE", "BLOCKED_BY_DATA"] },
+    "error_family": { "type": "string", "minLength": 1 },
+    "error_code": { "type": "string", "minLength": 1 },
+    "required_fields_missing": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "join_coverage": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "unit_alignment_status": { "type": "string", "enum": ["PASS", "FAIL"] }
+  },
+  "additionalProperties": true
+}

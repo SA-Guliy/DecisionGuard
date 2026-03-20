@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DoctorVarianceOutputV1",
+  "type": "object",
+  "required": [
+    "agent_name",
+    "run_id",
+    "generated_at",
+    "contract_version",
+    "metrics_contract_version",
+    "decision",
+    "reasons",
+    "ab_plan",
+    "success_metrics",
+    "guardrails",
+    "blocked_metrics",
+    "ab_risks",
+    "required_human_approval",
+    "next_actions"
+  ],
+  "properties": {
+    "agent_name": { "const": "Doctor Variance" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string" },
+    "contract_version": { "const": "doctor_variance.v1" },
+    "metrics_contract_version": { "const": "metrics_contract_v1" },
+    "decision": {
+      "type": "string",
+      "enum": ["STOP", "HOLD_NEED_DATA", "HOLD_RISK", "RUN_AB", "ROLLOUT_CANDIDATE"]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message", "evidence_refs"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string", "enum": ["HARD_FAIL", "WARN", "INFO"] },
+          "message": { "type": "string" },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "ab_plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "goal",
+          "lever_type",
+          "unit",
+          "duration_days",
+          "freeze_window_days",
+          "success_metrics",
+          "guardrails"
+        ],
+        "properties": {
+          "name": { "type": "string" },
+          "goal": { "type": "string" },
+          "lever_type": { "type": "string" },
+          "unit": { "type": "string", "enum": ["customer", "store"] },
+          "experiment_class": { "type": "string" },
+          "randomization_unit": { "type": "string", "enum": ["customer", "store"] },
+          "analysis_unit": { "type": "string", "enum": ["customer", "store"] },
+          "pre_period_weeks": { "type": "integer", "minimum": 1 },
+          "test_period_weeks": { "type": "integer", "minimum": 1 },
+          "wash_in_days": { "type": "integer", "minimum": 0 },
+          "attribution_window_rule": { "type": "string" },
+          "test_side": { "type": "string", "enum": ["one-sided", "two-sided"] },
+          "metric_semantics": { "type": "string" },
+          "surrogate_batch_id_strategy": { "type": ["string", "null"] },
+          "scope": { "type": "array", "items": { "type": "string" } },
+          "duration_days": { "type": "integer" },
+          "freeze_window_days": { "type": "integer" },
+          "success_metrics": { "type": "array", "items": { "type": "string" } },
+          "guardrails": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "success_metrics": { "type": "array", "items": { "type": "string" } },
+    "guardrails": { "type": "array", "items": { "type": "string" } },
+    "blocked_metrics": { "type": "array", "items": { "type": "string" } },
+    "ab_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["risk_type", "check_name", "severity", "mitigation"],
+        "properties": {
+          "risk_type": { "type": "string" },
+          "check_name": { "type": "string" },
+          "severity": { "type": "string", "enum": ["HARD_FAIL", "WARN", "INFO"] },
+          "mitigation": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "required_human_approval": {
+      "type": "string",
+      "enum": ["NONE", "PM_REQUIRED", "PM_DATA_REQUIRED"]
+    },
+    "next_actions": { "type": "array", "items": { "type": "string" } },
+    "inputs": { "type": "object" },
+    "human_summary_md": { "type": "string" },
+    "recommended_experiment": {
+      "type": ["object", "null"],
+      "properties": {
+        "randomization_unit": { "type": "string" },
+        "analysis_unit": { "type": "string" },
+        "pre_period_weeks": { "type": "integer" },
+        "test_period_weeks": { "type": "integer" },
+        "wash_in_days": { "type": "integer" },
+        "attribution_window_rule": { "type": "string" },
+        "test_side": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "measurement_fix_plan": {
+      "type": ["object", "null"],
+      "properties": {
+        "required_design_fields": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "hypothesis_generation_mode": {
+      "type": "string",
+      "enum": ["seed_templates", "context_rewriter", "fallback_seed_templates"]
+    },
+    "visible_reasoning_trace": {
+      "type": "object",
+      "properties": {
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim_id",
+              "statement",
+              "evidence_refs",
+              "alternatives_considered",
+              "falsifiability_test",
+              "decision_impact"
+            ],
+            "properties": {
+              "claim_id": { "type": "string" },
+              "statement": { "type": "string" },
+              "evidence_refs": { "type": "array", "items": { "type": "string" } },
+              "alternatives_considered": { "type": "array", "items": { "type": "string" } },
+              "falsifiability_test": { "type": "string" },
+              "decision_impact": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "gates_checked": { "type": "array", "items": { "type": "string" } },
+        "unknowns": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

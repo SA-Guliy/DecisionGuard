@@ -1,0 +1,165 @@
+{
+  "targets_version": "v1",
+  "currency": "RUB",
+  "period": {
+    "mode": "rolling_days",
+    "days": 14,
+    "label": "Default 14D plan"
+  },
+  "sources": {
+    "default_plan_source": "targets",
+    "fallback_plan_source": "prev"
+  },
+  "kpi_targets": {
+    "buyers_active_avg": {
+      "metric_key": "active_buyers_avg",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "relative_to_prev",
+        "value": 0.03
+      },
+      "notes": "План: +3% к предыдущему периоду (rolling 14d)."
+    },
+    "new_buyers_7d": {
+      "metric_key": "new_buyers_7d",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 120
+      },
+      "notes": "Планируем приток (можно заменить на relative_to_prev)."
+    },
+    "churn_rate": {
+      "metric_key": "churn_rate",
+      "direction": "lower_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 0.05
+      },
+      "format": "percent",
+      "notes": "Целевой churn на период (если метрика доступна)."
+    },
+    "orders_cnt": {
+      "metric_key": "orders_cnt",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "relative_to_prev",
+        "value": 0.02
+      }
+    },
+    "gmv": {
+      "metric_key": "gmv",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "relative_to_prev",
+        "value": 0.03
+      }
+    },
+    "aov": {
+      "metric_key": "aov",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "relative_to_prev",
+        "value": 0.02
+      },
+      "notes": "Цель 2: AOV +2% при guardrails по марже/сервису."
+    },
+    "gp_margin": {
+      "metric_key": "gp_margin",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 0.22
+      },
+      "format": "percent",
+      "notes": "Guardrail: маржа не ниже порога."
+    },
+    "fill_rate_units": {
+      "metric_key": "fill_rate_units",
+      "direction": "higher_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 0.95
+      },
+      "format": "percent",
+      "notes": "Guardrail: service level."
+    },
+    "oos_lost_gmv_rate": {
+      "metric_key": "oos_lost_gmv_rate",
+      "direction": "lower_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 0.1
+      },
+      "format": "percent"
+    },
+    "writeoff_cogs": {
+      "metric_key": "writeoff_cogs",
+      "direction": "lower_is_better",
+      "plan": {
+        "type": "relative_to_prev",
+        "value": -0.1
+      },
+      "notes": "Цель 1: списание -10% к предыдущему периоду."
+    },
+    "writeoff_rate_vs_requested_units": {
+      "metric_key": "writeoff_rate_vs_requested_units",
+      "direction": "lower_is_better",
+      "plan": {
+        "type": "absolute",
+        "value": 0.015
+      },
+      "format": "percent"
+    }
+  },
+  "rollup_sections": {
+    "goal1_spoilage": [
+      "writeoff_cogs",
+      "writeoff_rate_vs_requested_units",
+      "perishable_gmv_share"
+    ],
+    "goal2_aov": [
+      "aov",
+      "gp_per_order",
+      "gp_margin"
+    ],
+    "goal3_customers": [
+      "active_buyers_avg",
+      "new_buyers_7d",
+      "churn_rate",
+      "rep_mean"
+    ],
+    "ops_guardrails": [
+      "fill_rate_units",
+      "oos_lost_gmv_rate"
+    ]
+  },
+  "explanations_rules": {
+    "goodhart_starvation": {
+      "if": [
+        {
+          "metric": "writeoff_cogs",
+          "delta_vs_plan_direction": "better"
+        },
+        {
+          "metric": "fill_rate_units",
+          "delta_vs_plan_direction": "worse"
+        }
+      ],
+      "message": "Списание улучшилось, но просел fill rate — риск starvation (улучшили KPI нехваткой товара)."
+    },
+    "margin_burn": {
+      "if": [
+        {
+          "metric": "gmv",
+          "delta_vs_plan_direction": "better"
+        },
+        {
+          "metric": "gp_margin",
+          "delta_vs_plan_direction": "worse"
+        }
+      ],
+      "message": "Выручка растёт, но маржа падает — вероятно давление скидками/ценой."
+    }
+  }
+}

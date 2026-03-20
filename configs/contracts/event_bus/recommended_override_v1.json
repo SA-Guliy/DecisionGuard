@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RecommendedOverrideV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "reconciliation_id",
+    "source_event_id",
+    "current_decision",
+    "recommended_decision",
+    "reason_codes",
+    "human_approval_required",
+    "auto_decision_change_applied",
+    "recommended_at"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "reconciliation_id": { "type": "string", "minLength": 1 },
+    "source_event_id": { "type": "string", "minLength": 1 },
+    "current_decision": {
+      "type": "string",
+      "enum": ["STOP", "HOLD_NEED_DATA", "HOLD_RISK", "RUN_AB", "ROLLOUT_CANDIDATE"]
+    },
+    "recommended_decision": {
+      "type": "string",
+      "enum": ["STOP", "HOLD_NEED_DATA", "HOLD_RISK", "RUN_AB", "ROLLOUT_CANDIDATE"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "human_approval_required": {
+      "type": "boolean",
+      "const": true
+    },
+    "auto_decision_change_applied": {
+      "type": "boolean",
+      "const": false
+    },
+    "recommended_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

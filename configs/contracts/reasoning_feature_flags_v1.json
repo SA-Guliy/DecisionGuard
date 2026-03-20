@@ -1,0 +1,13 @@
+{
+  "version": "reasoning_feature_flags_v1",
+  "flags": {
+    "ENABLE_VISIBLE_REASONING_TRACE": 0,
+    "CAPTAIN_ALLOW_NOVEL_ISSUES": 0,
+    "DOCTOR_DYNAMIC_HYPOTHESES": 0
+  },
+  "policy": {
+    "phase": "phase3_dynamic_logic_advisory",
+    "require_llm_provenance_logging": true,
+    "reasoning_trace_mode": "advisory"
+  }
+}

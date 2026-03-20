@@ -1,0 +1,8 @@
+{
+  "version": "reconciliation_policy_v1",
+  "provisional_requires_reconciliation": true,
+  "reconciliation_job_required": true,
+  "worker_mode": "async_local_queue",
+  "max_pending_hours": 24,
+  "safe_decision_on_missing_reconciliation": "HOLD_NEED_DATA"
+}

@@ -1,0 +1,77 @@
+{
+  "version": "decision_contract_v2",
+  "backward_compatible_reads": [
+    "decision_contract_v1"
+  ],
+  "decisions": [
+    "STOP",
+    "HOLD_NEED_DATA",
+    "HOLD_RISK",
+    "RUN_AB",
+    "ROLLOUT_CANDIDATE"
+  ],
+  "required_fields": {
+    "doctor": [
+      "normalized_decision",
+      "assignment_status"
+    ],
+    "evaluator": [
+      "decision",
+      "assignment_status",
+      "blocked_by"
+    ],
+    "commander": [
+      "decision",
+      "normalized_decision",
+      "blocked_by",
+      "inputs_summary",
+      "doctor_hypothesis_review"
+    ]
+  },
+  "forbidden_decisions_when": [
+    {
+      "condition": "measurement_state in {UNOBSERVABLE,BLOCKED_BY_DATA}",
+      "forbidden": [
+        "RUN_AB",
+        "ROLLOUT_CANDIDATE"
+      ]
+    },
+    {
+      "condition": "ab_preflight_status == FAIL",
+      "forbidden": [
+        "RUN_AB",
+        "ROLLOUT_CANDIDATE"
+      ]
+    },
+    {
+      "condition": "ab_inference_status == INVALID_METHODS",
+      "forbidden": [
+        "RUN_AB",
+        "ROLLOUT_CANDIDATE"
+      ]
+    },
+    {
+      "condition": "srm_status != PASS",
+      "forbidden": [
+        "RUN_AB",
+        "ROLLOUT_CANDIDATE"
+      ]
+    },
+    {
+      "condition": "causal_grounded_status != PASS",
+      "forbidden": [
+        "RUN_AB",
+        "ROLLOUT_CANDIDATE"
+      ]
+    }
+  ],
+  "reasoning_checks": {
+    "advisory_defaults": [
+      "trace_completeness_rate",
+      "alternative_hypothesis_quality",
+      "falsifiability_specificity",
+      "decision_change_sensitivity"
+    ],
+    "promotion_policy": "advisory_then_partial_critical_then_full_critical"
+  }
+}

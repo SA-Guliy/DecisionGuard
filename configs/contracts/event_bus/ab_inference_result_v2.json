@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ABInferenceResultV2",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "estimand_id",
+    "primary_metric_id",
+    "method",
+    "unit_of_inference",
+    "effect",
+    "ci",
+    "p_value",
+    "power_status",
+    "assumptions_checks",
+    "status"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "estimand_id": { "type": "string", "minLength": 1 },
+    "primary_metric_id": { "type": "string", "minLength": 1 },
+    "method": { "type": "string", "minLength": 1 },
+    "unit_of_inference": { "type": "string", "enum": ["customer", "store", "store_week"] },
+    "effect": {
+      "type": "object",
+      "required": ["value"],
+      "properties": {
+        "value": { "type": ["number", "null"] },
+        "uplift_pct": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "ci": {
+      "type": "object",
+      "required": ["lower", "upper", "level"],
+      "properties": {
+        "lower": { "type": ["number", "null"] },
+        "upper": { "type": ["number", "null"] },
+        "level": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+      },
+      "additionalProperties": true
+    },
+    "p_value": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+    "power_status": { "type": "string", "enum": ["PASS", "UNDERPOWERED", "UNKNOWN"] },
+    "assumptions_checks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["OK", "UNDERPOWERED", "INCONCLUSIVE", "INVALID_METHODS", "UNOBSERVABLE", "BLOCKED_BY_DATA"]
+    }
+  },
+  "additionalProperties": true
+}

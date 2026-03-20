@@ -1,0 +1,79 @@
+name: ci-governance
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+jobs:
+  governance-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax compile
+        run: |
+          python3 -m py_compile \
+            src/architecture_v3.py \
+            src/llm_secure_gateway.py \
+            src/retrieval_runtime.py \
+            scripts/run_all.py \
+            scripts/verify_acceptance.py \
+            scripts/run_historical_retrieval_gate.py \
+            scripts/run_agent_value_eval.py \
+            scripts/build_cost_ledger.py \
+            scripts/build_investor_demo_staging.py \
+            scripts/run_publish_release_audit.py
+
+      - name: Contract integrity set
+        run: |
+          python3 - <<'PY'
+          from src.architecture_v3 import validate_v3_contract_set
+          validate_v3_contract_set()
+          print('ok: validate_v3_contract_set')
+          PY
+
+      - name: Sanitization policy smoke
+        run: |
+          python3 - <<'PY'
+          from src.architecture_v3 import load_json_with_integrity, SANITIZATION_POLICY_PATH
+          p = load_json_with_integrity(SANITIZATION_POLICY_PATH)
+          assert p.get('encrypted_at_rest') is True
+          assert p.get('audit_log_required') is True
+          print('ok: sanitization_policy_contract')
+          PY
+
+      - name: Runtime governance tests
+        run: |
+          python3 -m unittest \
+            tests/test_build_investor_demo_staging.py \
+            tests/test_blueprint_v21_runtime_enforcement.py \
+            tests/test_architecture_v3_runtime_contracts.py \
+            tests/test_batch_record_v2_consolidated_regressions.py \
+            tests/test_commander_hypothesis_review_v1.py \
+            tests/test_runtime_controls_and_acceptance_events.py \
+            tests/test_runtime_limits_enforcement.py \
+            tests/test_historical_retrieval_gate_v32.py \
+            tests/test_real_kpi_ledger_logic.py \
+            tests/test_kpi_ledger_integrity_v2.py
+
+      - name: Build sanitized demo staging
+        run: |
+          python3 scripts/build_investor_demo_staging.py \
+            --publish-mode staging_only \
+            --publish-root github_publish \
+            --apply 1
+
+      - name: Publish release audit (blocking)
+        run: |
+          python3 scripts/run_publish_release_audit.py \
+            --publish-mode staging_only \
+            --publish-root github_publish \
+            --run-smoke-tests 0 \
+            --strict 1

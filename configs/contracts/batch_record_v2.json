@@ -1,0 +1,85 @@
+{
+  "version": "batch_record_v2.contract.v1",
+  "record_version": "batch_record_v2",
+  "required_top_level": [
+    "version",
+    "run_id",
+    "query",
+    "generated_at",
+    "captain",
+    "doctor",
+    "commander",
+    "captain_usage",
+    "doctor_usage",
+    "commander_usage",
+    "runtime_flags",
+    "cost_usd_estimate_total",
+    "reasoning",
+    "supported_count",
+    "refuted_count",
+    "untestable_count",
+    "verification_quality_score"
+  ],
+  "required_nested": {
+    "captain": [
+      "sanity_status",
+      "pass_to_doctor"
+    ],
+    "doctor": [
+      "suggested_decision",
+      "risk_signals",
+      "recommended_actions"
+    ],
+    "commander": [
+      "decision",
+      "executive_summary",
+      "rationale_bullets",
+      "next_steps"
+    ],
+    "runtime_flags": [
+      "backend_error",
+      "retryable_api_error",
+      "provisional_local_fallback",
+      "fallback_agents"
+    ],
+    "reasoning": [
+      "observed_facts",
+      "causal_interpretation",
+      "why_not_opposite_decision",
+      "confidence",
+      "evidence_quality",
+      "decision_tradeoffs",
+      "mitigations",
+      "uncertainty_gaps"
+    ]
+  },
+  "typed_fields": {
+    "run_id": "str",
+    "query": "str",
+    "generated_at": "str",
+    "captain.sanity_status": "str",
+    "doctor.suggested_decision": "str",
+    "commander.decision": "str",
+    "runtime_flags.fallback_agents": "list",
+    "cost_usd_estimate_total": "float",
+    "supported_count": "int",
+    "refuted_count": "int",
+    "untestable_count": "int",
+    "verification_quality_score": "float",
+    "reasoning.observed_facts": "list",
+    "reasoning.causal_interpretation": "str",
+    "reasoning.why_not_opposite_decision": "str",
+    "reasoning.confidence": "dict",
+    "reasoning.confidence.score": "float",
+    "reasoning.confidence.label": "str",
+    "reasoning.confidence.basis": "list",
+    "reasoning.evidence_quality": "dict",
+    "reasoning.evidence_quality.score": "float",
+    "reasoning.evidence_quality.label": "str",
+    "reasoning.evidence_quality.evidence_count": "int",
+    "reasoning.evidence_quality.missing_evidence": "list",
+    "reasoning.decision_tradeoffs": "list",
+    "reasoning.mitigations": "list",
+    "reasoning.uncertainty_gaps": "list"
+  }
+}

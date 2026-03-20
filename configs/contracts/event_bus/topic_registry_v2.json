@@ -1,0 +1,81 @@
+{
+  "version": "event_bus_topic_registry_v2",
+  "compatibility": "BACKWARD_TRANSITIVE",
+  "partition_key_policy": "experiment_id_or_run_id_plus_experiment_id",
+  "topics": [
+    {
+      "topic": "ab.experiment.registered.v2",
+      "schema": "experiment_contract_v2.json",
+      "producer": "orchestrator/planner"
+    },
+    {
+      "topic": "ab.assignment.exposed.v1",
+      "schema": "assignment_log_v1.json",
+      "producer": "assignment_service"
+    },
+    {
+      "topic": "ab.preflight.completed.v1",
+      "schema": "ab_preflight_result_v1.json",
+      "producer": "preflight_service"
+    },
+    {
+      "topic": "ab.srm.completed.v1",
+      "schema": "srm_check_v1.json",
+      "producer": "srm_service"
+    },
+    {
+      "topic": "ab.unit_outcomes.materialized.v1",
+      "schema": "ab_unit_outcomes_v1.json",
+      "producer": "feature_data_mart"
+    },
+    {
+      "topic": "metrics.semantics.published.v1",
+      "schema": "metric_semantics_registry_v1.json",
+      "producer": "metrics_governance"
+    },
+    {
+      "topic": "ab.guardrails.observed.v1",
+      "schema": "guardrail_observations_v1.json",
+      "producer": "ab_analysis"
+    },
+    {
+      "topic": "ab.inference.completed.v2",
+      "schema": "ab_inference_result_v2.json",
+      "producer": "ab_analysis"
+    },
+    {
+      "topic": "ab.decision.proposed.v2",
+      "schema": "decision_contract_result_v2.json",
+      "producer": "commander"
+    },
+    {
+      "topic": "ab.causal.grounded.v2",
+      "schema": "causal_claims_grounded_v2.json",
+      "producer": "narrative_validator"
+    },
+    {
+      "topic": "ai.reasoning.weak_path_detected.v1",
+      "schema": "weak_reasoning_result_v1.json",
+      "producer": "decision_reconciliation_guard"
+    },
+    {
+      "topic": "ai.reconciliation.requested.v1",
+      "schema": "reconciliation_request_v1.json",
+      "producer": "decision_reconciliation_guard"
+    },
+    {
+      "topic": "ai.reconciliation.completed.v1",
+      "schema": "reconciliation_result_v1.json",
+      "producer": "decision_reconciliation_guard"
+    },
+    {
+      "topic": "ai.reconciliation.recommended_override.v1",
+      "schema": "recommended_override_v1.json",
+      "producer": "decision_reconciliation_guard"
+    }
+  ],
+  "dlq": {
+    "topic": "ab.contract.dlq.v1",
+    "required_fields": ["event_id", "error_family", "error_code", "failed_schema"]
+  }
+}

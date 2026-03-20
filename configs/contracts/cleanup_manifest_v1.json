@@ -1,0 +1,26 @@
+{
+  "version": "cleanup_manifest_v1.contract.v1",
+  "manifest_version": "cleanup_manifest_v1",
+  "required_top_level": [
+    "version",
+    "generated_at",
+    "applied",
+    "strict_integrity",
+    "trash_root",
+    "summary",
+    "entries",
+    "rollback_script"
+  ],
+  "required_summary_fields": [
+    "candidate_count",
+    "moved_count",
+    "integrity_error_count",
+    "golden_policy_error_count",
+    "passed"
+  ],
+  "required_entry_fields": [
+    "source_path",
+    "trash_path",
+    "artifact_type"
+  ]
+}

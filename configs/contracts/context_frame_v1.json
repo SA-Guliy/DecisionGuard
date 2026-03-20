@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContextFrameV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "current_ab",
+    "next_experiment",
+    "status",
+    "generated_at"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "current_ab": {
+      "type": "object",
+      "required": ["experiment_id", "source", "status"],
+      "properties": {
+        "experiment_id": {"type": "string"},
+        "source": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "next_experiment": {
+      "type": "object",
+      "required": ["experiment_id", "source", "status"],
+      "properties": {
+        "experiment_id": {"type": "string"},
+        "source": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "error_code": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

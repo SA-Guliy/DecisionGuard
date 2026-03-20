@@ -1,0 +1,18 @@
+{
+  "version": "sanitization_policy_v2",
+  "storage_policy": "security_obfuscation_map_only",
+  "encrypted_at_rest": true,
+  "encryption_algorithm": "openssl_aes_256_cbc_pbkdf2",
+  "kms_key_ref": "kms://runtime/security/obfuscation-map",
+  "kms_envelope_required": true,
+  "acl_enforced": true,
+  "ttl_hours": 24,
+  "allowed_readers": [
+    "security",
+    "compliance",
+    "runtime_orchestrator"
+  ],
+  "key_rotation_days": 30,
+  "decrypt_roundtrip_required": true,
+  "audit_log_required": true
+}

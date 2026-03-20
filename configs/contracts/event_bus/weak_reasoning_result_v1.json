@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WeakReasoningResultV1",
+  "type": "object",
+  "required": [
+    "run_id",
+    "experiment_id",
+    "source_event_id",
+    "tier_used",
+    "audited_by_weak_model",
+    "decision_ceiling_applied",
+    "reconciliation_status",
+    "auto_decision_change_applied",
+    "retry_count",
+    "retry_budget",
+    "occurred_at"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "source_event_id": { "type": "string", "minLength": 1 },
+    "tier_used": { "type": "string", "minLength": 1 },
+    "audited_by_weak_model": { "type": "boolean" },
+    "decision_ceiling_applied": {
+      "type": "string",
+      "const": "HOLD_NEED_DATA"
+    },
+    "reconciliation_status": {
+      "type": "string",
+      "enum": ["NOT_REQUESTED", "REQUESTED", "IN_PROGRESS", "COMPLETED", "EXPIRED", "FAILED"]
+    },
+    "auto_decision_change_applied": {
+      "type": "boolean",
+      "const": false
+    },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "retry_budget": { "type": "integer", "minimum": 0 },
+    "occurred_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}
