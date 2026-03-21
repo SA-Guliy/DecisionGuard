@@ -66,3 +66,23 @@ human_reports/
 
 # Legacy version archive
 v1/
+
+# Operational runbooks and migration artifacts
+CLEANUP_RUNBOOK.md
+MIGRATION_MANIFEST.json
+MIGRATION_MANIFEST.md
+rollback.sh
+
+# Publishing meta-workflow (internal process docs)
+PUBLISH_AUDIT_CHECKLIST.md
+PUBLISH_DENYLIST.txt
+PUBLISH_WHITELIST.txt
+PUBLISH_MANIFEST.md
+
+# Internal working docs and archives
+docs/archive/
+docs/executable_prd_v1.md
+docs/security_migration_note.md
+
+# Database schema (internal)
+sql/

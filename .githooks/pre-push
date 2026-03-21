@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# pre-push hook: warns if any file about to be pushed looks like it shouldn't be public.
+# Install: git config core.hooksPath .githooks
+
+set -euo pipefail
+
+DENY_PATTERNS=(
+  "docs/archive/"
+  "docs/executable_prd"
+  "docs/security_migration"
+  "sql/"
+  "CLEANUP_RUNBOOK"
+  "MIGRATION_MANIFEST"
+  "PUBLISH_AUDIT_CHECKLIST"
+  "PUBLISH_DENYLIST"
+  "PUBLISH_WHITELIST"
+  "PUBLISH_MANIFEST"
+  "rollback.sh"
+  "AGENT_EVAL_INTERNAL"
+  "AUDIT.md"
+  "REPO_TREE.md"
+  "cursorrules"
+  "reports/"
+  "human_reports/"
+  "v1/"
+  ".env"
+  ".groq_secrets"
+)
+
+REMOTE="$1"
+URL="$2"
+
+# Collect all files that would be pushed (new commits vs remote)
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue  # deleting branch, skip
+  fi
+
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    range="$local_sha"
+    files=$(git diff-tree --no-commit-id -r --name-only "$local_sha" 2>/dev/null || true)
+  else
+    range="$remote_sha..$local_sha"
+    files=$(git diff --name-only "$range" 2>/dev/null || true)
+  fi
+
+  BLOCKED=()
+  for file in $files; do
+    for pattern in "${DENY_PATTERNS[@]}"; do
+      if [[ "$file" == *"$pattern"* ]]; then
+        BLOCKED+=("  BLOCKED: $file  (matches pattern: $pattern)")
+        break
+      fi
+    done
+  done
+
+  if [ ${#BLOCKED[@]} -gt 0 ]; then
+    echo ""
+    echo "⛔ PRE-PUSH BLOCK: The following files should NOT be pushed to a public repo:"
+    for msg in "${BLOCKED[@]}"; do
+      echo "$msg"
+    done
+    echo ""
+    echo "Run: git rm --cached <file>  to untrack, then update .gitignore"
+    echo "Push aborted."
+    exit 1
+  fi
+
+done
+
+exit 0
