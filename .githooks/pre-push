@@ -36,12 +36,13 @@ while read local_ref local_sha remote_ref remote_sha; do
     continue  # deleting branch, skip
   fi
 
+  # Only check files being ADDED or MODIFIED — not deleted (D status).
+  # Deletions are safe and should not be blocked.
   if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-    range="$local_sha"
-    files=$(git diff-tree --no-commit-id -r --name-only "$local_sha" 2>/dev/null || true)
+    files=$(git diff-tree --no-commit-id -r --diff-filter=AM --name-only "$local_sha" 2>/dev/null || true)
   else
     range="$remote_sha..$local_sha"
-    files=$(git diff --name-only "$range" 2>/dev/null || true)
+    files=$(git diff --diff-filter=AM --name-only "$range" 2>/dev/null || true)
   fi
 
   BLOCKED=()
