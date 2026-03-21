@@ -43,15 +43,36 @@ from src.architecture_v3 import (
     REQUIRED_GATE_ORDER,
     GATE_SEQUENCE,
     RECONCILIATION_POLICY_PATH,
+    captain_artifact_path,
+    gate_result_path,
     load_json_with_integrity,
+    stat_evidence_bundle_path,
     validate_v3_contract_set,
     write_gate_result,
 )
-from src.domain_template import ConfigurationError as DomainTemplateConfigurationError, load_domain_template
+from src.stat_engine import compute_stat_evidence
+from src.domain_template import (
+    ConfigurationError as DomainTemplateConfigurationError,
+    load_domain_template,
+    load_experiment_variants,
+)
 from src.run_all_cli import build_run_all_parser, resolve_run_all_runtime_config
 from src.run_summary import print_run_completion_summary
 from src.security_profile import load_security_profile
 from src.security_utils import enforce_service_dsn_policy, redact_text as _redact_text_shared, write_sha256_sidecar
+from src.paired_registry import (
+    CTRL_FOUNDATION_ALLOWED_STEPS,
+    PAIRED_AGGRESSIVE_DECISIONS,
+    PairedRunStatus,
+    apply_status_transition,
+    effective_paired_status,
+    is_partial_like,
+    load_registry_for_run,
+    mark_treatment_failed_then_partial,
+    normalize_registry_key,
+    paired_registry_path,
+    save_registry,
+)
 
 LOADER_SERVICE = client_db_service("loader")
 APP_SERVICE = client_db_service("app")
@@ -68,6 +89,14 @@ _FORBIDDEN_RUNTIME_CLOUD_PATTERNS = (
     re.compile(r"(^|[^\"'])api\.openai\.com", re.MULTILINE),
 )
 _REQUIRED_GATE_EXECUTION_LOG: list[str] = []
+_GOAL1_CONTRACT_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "step1_replenishment_log": ("batch_id", "supplier_id", "purchase_order_id"),
+    "step1_writeoff_log": ("batch_id", "supplier_id", "purchase_order_id"),
+}
+_LOCKED_HISTORICAL_DIR = Path("not_delete_historical_patterns/metrics_snapshots")
+_LOCKED_HISTORICAL_MIN_PAIRS = 2
+_CTRL_FOUNDATION_ACTIVE = False
+_CTRL_FOUNDATION_EXECUTED_STEPS: list[str] = []
 
 def _strict_runtime() -> bool:
     return os.getenv("DS_STRICT_RUNTIME", "0") == "1"
@@ -290,7 +319,7 @@ def _load_json_optional_with_integrity(path: Path) -> dict[str, Any] | None:
 
 
 def _detect_provisional_fallback_state(run_id: str) -> dict[str, Any]:
-    captain = _load_json_optional_with_integrity(Path(f"data/llm_reports/{run_id}_captain.json")) or {}
+    captain = _load_json_optional_with_integrity(captain_artifact_path(run_id)) or {}
     doctor = _load_json_optional_with_integrity(Path(f"data/agent_reports/{run_id}_doctor_variance.json")) or {}
     commander = _load_json_optional_with_integrity(Path(f"data/agent_reports/{run_id}_commander_priority.json")) or {}
 
@@ -363,6 +392,7 @@ def _write_reconciliation_job(run_id: str, state: dict[str, Any], reconciliation
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "PENDING",
+        "batch_id": run_id,
         "provisional_local_fallback": bool(state.get("provisional_local_fallback", False)),
         "needs_cloud_reconciliation": bool(state.get("needs_cloud_reconciliation", False)),
         "fallback_agents": [str(x) for x in state.get("fallback_agents", []) if str(x).strip()],
@@ -412,7 +442,21 @@ def _ensure_provisional_reconciliation_or_exit(
         f"path={job_path} fallback_agents={','.join(state.get('fallback_agents', [])) or 'none'}"
     )
     _run_step(
-        _py("scripts/run_reconciliation_worker.py", "--run-id", run_id),
+        _py(
+            "scripts/run_reconciliation_worker.py",
+            "--run-id",
+            run_id,
+            "--batch-id",
+            run_id,
+            "--backend",
+            "groq",
+            "--dry-run",
+            "0",
+            "--max-pending-hours",
+            str(int(policy.get("max_pending_hours", 24) or 24)),
+            "--out-json",
+            f"data/reconciliation/{run_id}_reconciliation_worker.json",
+        ),
         "run_reconciliation_worker",
         log_file,
     )
@@ -583,6 +627,17 @@ def _print_verbose_tail(stdout_text: str, step_name: str) -> None:
 
 
 def _run_step(cmd: list[str], step_name: str, log_file: Path, extra_env: dict[str, str] | None = None) -> None:
+    global _CTRL_FOUNDATION_EXECUTED_STEPS
+    if _CTRL_FOUNDATION_ACTIVE:
+        allowed = set(CTRL_FOUNDATION_ALLOWED_STEPS)
+        if step_name not in allowed:
+            print(
+                "ERROR CTRL_FOUNDATION_SCOPE_VIOLATION "
+                f"step={step_name} forbidden_in_ctrl_foundation_scope allowed={sorted(allowed)}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        _CTRL_FOUNDATION_EXECUTED_STEPS.append(step_name)
     child_env = os.environ.copy()
     if extra_env:
         child_env.update(extra_env)
@@ -593,6 +648,285 @@ def _run_step(cmd: list[str], step_name: str, log_file: Path, extra_env: dict[st
         raise SystemExit(1)
     print(f"OK step={step_name}")
     _print_verbose_tail(result.stdout, step_name)
+
+
+def _init_or_load_paired_registry(*, run_id: str, run_id_ctrl: str, experiment_id: str, mode: str) -> dict[str, Any] | None:
+    if str(mode).strip().lower() != "paired":
+        return None
+    try:
+        _ = paired_registry_path(experiment_id, run_id)
+    except Exception as exc:
+        raise SystemExit(f"PAIRED_REGISTRY_KEY_INVALID: {exc}")
+    if normalize_registry_key(run_id_ctrl) == normalize_registry_key(run_id):
+        raise SystemExit("PAIRED_RUN_ID_COLLISION: run_id_ctrl must not equal parent run_id")
+    try:
+        existing = load_registry_for_run(run_id, required=False)
+    except Exception as exc:
+        raise SystemExit(f"PAIRED_REGISTRY_KEY_INVALID: {exc}")
+    if isinstance(existing, dict):
+        return existing
+    payload = {
+        "version": "paired_registry_v1",
+        "mode": "paired",
+        "experiment_id": experiment_id,
+        "parent_run_id": run_id,
+        "ctrl_run_id": run_id_ctrl,
+        "treatment_run_id": run_id,
+        "paired_status": PairedRunStatus.COMPLETE.value,
+        "error_code": "NONE",
+        "reason": "paired_initialized",
+        "paired_context_ref": _artifact_ref(Path(f"data/agent_context/{run_id}_paired_experiment_v2.json")),
+        "audit_ref": "",
+        "status_history": [],
+    }
+    save_registry(payload)
+    return payload
+
+
+def _save_paired_registry_update(payload: dict[str, Any]) -> dict[str, Any]:
+    out_path = save_registry(payload)
+    updated = load_json_with_integrity(out_path)
+    return updated if isinstance(updated, dict) else payload
+
+
+def _mark_ctrl_foundation_failed(
+    registry_payload: dict[str, Any] | None,
+    *,
+    reason: str,
+    audit_ref: str = "",
+) -> dict[str, Any] | None:
+    if not isinstance(registry_payload, dict):
+        return None
+    payload = apply_status_transition(
+        registry_payload,
+        to_status=PairedRunStatus.CTRL_FAILED.value,
+        reason=str(reason or "ctrl_foundation_failed"),
+        error_code="CTRL_FOUNDATION_SCOPE_VIOLATION",
+    )
+    if audit_ref:
+        payload["audit_ref"] = audit_ref
+    return _save_paired_registry_update(payload)
+
+
+def _promote_partial_from_treatment_failure(
+    registry_payload: dict[str, Any] | None,
+    *,
+    reason: str,
+) -> dict[str, Any] | None:
+    if not isinstance(registry_payload, dict):
+        return None
+    payload = mark_treatment_failed_then_partial(registry_payload, reason=reason)
+    return _save_paired_registry_update(payload)
+
+
+def _artifact_ref(path: Path) -> str:
+    return f"artifact:{str(path)}"
+
+
+def _write_paired_experiment_context(
+    *,
+    run_id: str,
+    experiment_id: str,
+    ctrl_run_id: str,
+    treatment_run_id: str,
+    paired_status: str,
+    audit_ref: str = "",
+    partial_reason: str = "",
+    failure_reason: str = "",
+    failed_step: str = "",
+    decision_ceiling: str = "",
+) -> Path:
+    out = Path(f"data/agent_context/{run_id}_paired_experiment_v2.json")
+    status = str(paired_status or "").strip().upper()
+    payload: dict[str, Any] = {
+        "version": "paired_experiment_v2",
+        "run_id": run_id,
+        "experiment_id": experiment_id,
+        "ctrl_run_id": ctrl_run_id,
+        "treatment_run_id": treatment_run_id,
+        "paired_status": status,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if status == PairedRunStatus.COMPLETE.value:
+        payload["layer1"] = {
+            "ctrl_metrics_snapshot_ref": _artifact_ref(Path(f"data/metrics_snapshots/{ctrl_run_id}.json")),
+            "treatment_metrics_snapshot_ref": _artifact_ref(Path(f"data/metrics_snapshots/{treatment_run_id}.json")),
+            "ctrl_foundation_audit_ref": audit_ref,
+        }
+        payload["layer2"] = {
+            "ctrl_ab_ref": _artifact_ref(Path(f"data/ab_reports/{ctrl_run_id}_{experiment_id}_ab.json")),
+            "treatment_ab_ref": _artifact_ref(Path(f"data/ab_reports/{treatment_run_id}_{experiment_id}_ab.json")),
+        }
+        payload["merger_artifact_ref"] = _artifact_ref(out)
+    elif status in {PairedRunStatus.PARTIAL.value, PairedRunStatus.TREATMENT_FAILED.value}:
+        payload["partial_reason"] = str(partial_reason or "treatment_pipeline_incomplete")
+        payload["decision_ceiling"] = "HOLD_NEED_DATA"
+        payload["failed_step"] = str(failed_step or "treatment_pipeline")
+    elif status == PairedRunStatus.CTRL_FAILED.value:
+        payload["failure_reason"] = str(failure_reason or "ctrl_foundation_failed")
+        payload["failed_step"] = str(failed_step or "ctrl_foundation")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_sha256_sidecar(out)
+    return out
+
+
+def _sync_paired_registry_refs(
+    registry_payload: dict[str, Any] | None,
+    *,
+    status: str,
+    error_code: str,
+    reason: str,
+    audit_ref: str = "",
+    paired_context_ref: str = "",
+) -> dict[str, Any] | None:
+    if not isinstance(registry_payload, dict):
+        return None
+    payload = apply_status_transition(
+        registry_payload,
+        to_status=str(status or registry_payload.get("paired_status", "")).strip().upper(),
+        reason=str(reason or registry_payload.get("reason", "paired_runtime_update")).strip(),
+        error_code=str(error_code or registry_payload.get("error_code", "NONE")).strip().upper(),
+    )
+    if audit_ref:
+        payload["audit_ref"] = audit_ref
+    if paired_context_ref:
+        payload["paired_context_ref"] = paired_context_ref
+    return _save_paired_registry_update(payload)
+
+
+def _run_ctrl_foundation_only(
+    *,
+    args: argparse.Namespace,
+    exp_id: str,
+    run_id_ctrl: str,
+    log_file: Path,
+    app_engine: Any,
+    ctrl_variant: dict[str, Any] | None = None,
+) -> Path:
+    global _CTRL_FOUNDATION_ACTIVE
+    global _CTRL_FOUNDATION_EXECUTED_STEPS
+    ctrl_args = argparse.Namespace(**vars(args))
+    ctrl_args.run_id = run_id_ctrl
+    if isinstance(ctrl_variant, dict):
+        if str(ctrl_variant.get("mode_tag", "")).strip():
+            ctrl_args.mode_tag = str(ctrl_variant.get("mode_tag"))
+        if ctrl_variant.get("horizon_days") is not None:
+            try:
+                ctrl_args.horizon_days = int(ctrl_variant.get("horizon_days"))
+            except Exception:
+                pass
+        if ctrl_variant.get("seed") is not None:
+            try:
+                ctrl_args.seed = int(ctrl_variant.get("seed"))
+            except Exception:
+                pass
+        overrides = ctrl_variant.get("overrides")
+        if isinstance(overrides, dict):
+            for key, value in overrides.items():
+                key_str = str(key)
+                if hasattr(ctrl_args, key_str):
+                    setattr(ctrl_args, key_str, value)
+    _CTRL_FOUNDATION_EXECUTED_STEPS = []
+    _CTRL_FOUNDATION_ACTIVE = True
+    audit_path = Path(f"data/agent_quality/{run_id_ctrl}_ctrl_foundation_audit.json")
+    try:
+        _run_simulation_and_foundation_steps(
+            args=ctrl_args,
+            exp_id=exp_id,
+            log_file=log_file,
+            app_engine=app_engine,
+        )
+        _run_metrics_and_ab_steps(
+            args=ctrl_args,
+            exp_id=exp_id,
+            log_file=log_file,
+        )
+        executed = list(_CTRL_FOUNDATION_EXECUTED_STEPS)
+        payload = {
+            "version": "ctrl_foundation_audit_v1",
+            "run_id": run_id_ctrl,
+            "status": "PASS",
+            "error_code": "NONE",
+            "executed_steps": executed,
+            "allowed_steps": list(CTRL_FOUNDATION_ALLOWED_STEPS),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_sha256_sidecar(audit_path)
+        return audit_path
+    except SystemExit:
+        payload = {
+            "version": "ctrl_foundation_audit_v1",
+            "run_id": run_id_ctrl,
+            "status": "FAIL",
+            "error_code": "CTRL_FOUNDATION_SCOPE_VIOLATION",
+            "executed_steps": list(_CTRL_FOUNDATION_EXECUTED_STEPS),
+            "allowed_steps": list(CTRL_FOUNDATION_ALLOWED_STEPS),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_sha256_sidecar(audit_path)
+        raise
+    finally:
+        _CTRL_FOUNDATION_ACTIVE = False
+
+
+def _enforce_forced_ceiling_on_commander(run_id: str, *, reason: str, paired_status: str) -> None:
+    path = Path(f"data/agent_reports/{run_id}_commander_priority.json")
+    if not path.exists():
+        return
+    try:
+        payload = load_json_with_integrity(path)
+    except Exception:
+        return
+    decision = str(payload.get("normalized_decision", payload.get("decision", ""))).upper()
+    if decision not in set(PAIRED_AGGRESSIVE_DECISIONS):
+        return
+    payload["decision"] = "HOLD_NEED_DATA"
+    payload["normalized_decision"] = "HOLD_NEED_DATA"
+    blocked_by = payload.get("blocked_by")
+    if not isinstance(blocked_by, list):
+        blocked_by = []
+    marker = f"paired_partial_forced_ceiling:{reason}"
+    if marker not in blocked_by:
+        blocked_by.append(marker)
+    payload["blocked_by"] = blocked_by
+    payload["paired_status"] = str(paired_status or "")
+    payload["forced_decision_ceiling"] = "HOLD_NEED_DATA"
+    payload["forced_decision_reason"] = reason
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_sha256_sidecar(path)
+
+
+def _enforce_paired_partial_ceiling_or_exit(
+    *,
+    run_id: str,
+    paired_mode: bool,
+    paired_registry_payload: dict[str, Any] | None,
+) -> None:
+    if not paired_mode or not isinstance(paired_registry_payload, dict):
+        return
+    status = effective_paired_status(str(paired_registry_payload.get("paired_status", "")))
+    if not is_partial_like(status):
+        return
+    commander_path = Path(f"data/agent_reports/{run_id}_commander_priority.json")
+    commander_payload = _load_json_optional_with_integrity(commander_path) or {}
+    decision = str(commander_payload.get("normalized_decision", commander_payload.get("decision", ""))).strip().upper()
+    if decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}:
+        _write_orchestrator_safe_decision_artifact(
+            run_id,
+            reason_code="PAIRED_PARTIAL_CEILING_VIOLATION",
+            safe_decision="HOLD_NEED_DATA",
+        )
+        print(
+            "ERROR PAIRED_PARTIAL_CEILING_VIOLATION "
+            f"paired_status={status} decision={decision}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 def _write_gate_result_safe(
@@ -798,6 +1132,81 @@ def _check_views(engine) -> tuple[bool, list[str]]:
     return (len(missing) == 0, missing)
 
 
+def _missing_columns(conn, schema_name: str, table_name: str, required: tuple[str, ...]) -> list[str]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = :schema_name AND table_name = :table_name
+            """
+        ),
+        {"schema_name": schema_name, "table_name": table_name},
+    ).fetchall()
+    existing = {str(r[0]) for r in rows}
+    return [c for c in required if c not in existing]
+
+
+def _preflight_validate_goal1_schema_contract_or_exit(engine) -> None:
+    schema_name = "step1"
+    missing_specs: list[tuple[str, list[str]]] = []
+    with engine.begin() as conn:
+        for table_name, required_cols in _GOAL1_CONTRACT_REQUIRED_COLUMNS.items():
+            fq_name = f"{schema_name}.{table_name}"
+            exists = conn.execute(text("SELECT to_regclass(:n)"), {"n": fq_name}).scalar()
+            if exists is None:
+                missing_specs.append((fq_name, ["<table_missing>"]))
+                continue
+            missing = _missing_columns(conn, schema_name, table_name, required_cols)
+            if missing:
+                missing_specs.append((fq_name, missing))
+    if missing_specs:
+        details = "; ".join([f"{name}:{','.join(cols)}" for name, cols in missing_specs])
+        print(
+            "ERROR schema_preflight_failed "
+            f"goal1_contract_missing={details} "
+            "required_for=goal1_batch_join_coverage",
+            file=sys.stderr,
+        )
+        print(
+            "ACTION: apply migration "
+            "'psql -d darkstore -f v1/sql/migrations/008_step1_goal1_contract_upgrade.sql' "
+            "with admin role before running run_all.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    print("schema_preflight_ok goal1_contract=PASS")
+
+
+def _count_json_sidecar_pairs(root: Path) -> int:
+    if not root.exists():
+        return 0
+    count = 0
+    for payload in root.glob("*.json"):
+        sidecar = payload.with_suffix(".json.sha256")
+        if sidecar.exists():
+            count += 1
+    return count
+
+
+def _preflight_validate_locked_historical_corpus_or_exit() -> None:
+    pairs = _count_json_sidecar_pairs(_LOCKED_HISTORICAL_DIR)
+    if pairs < _LOCKED_HISTORICAL_MIN_PAIRS:
+        print(
+            "ERROR historical_corpus_preflight_failed "
+            f"locked_dir={_LOCKED_HISTORICAL_DIR} json_sidecar_pairs={pairs} "
+            f"required_min={_LOCKED_HISTORICAL_MIN_PAIRS}",
+            file=sys.stderr,
+        )
+        print(
+            "ACTION: restore canonical historical snapshots into "
+            "'not_delete_historical_patterns/metrics_snapshots' with .sha256 sidecars.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    print(f"historical_corpus_preflight_ok locked_pairs={pairs}")
+
+
 def _run_simulation_and_foundation_steps(
     *,
     args: argparse.Namespace,
@@ -807,7 +1216,7 @@ def _run_simulation_and_foundation_steps(
 ) -> tuple[bool, list[str]]:
     sim_cmd = [
         "python3",
-        "v1/src/run_simulation_v1.py",
+        "scripts/run_simulation_v1.py",
         "--run-id",
         args.run_id,
         "--enable-customer-dynamics",
@@ -920,6 +1329,9 @@ def _run_core_agents_and_proof_steps(
     llm_env: dict[str, str] | None,
     retry_policy: dict[str, Any],
     hypothesis_review_flag: int = 0,
+    paired_mode: bool = False,
+    paired_status: str = "",
+    paired_registry_payload: dict[str, Any] | None = None,
 ) -> None:
     try:
         _run_llm_step_budgeted(
@@ -964,28 +1376,31 @@ def _run_core_agents_and_proof_steps(
     )
 
     try:
+        control_run_id = ""
+        if paired_mode and isinstance(paired_registry_payload, dict):
+            control_run_id = str(paired_registry_payload.get("ctrl_run_id", "")).strip()
+        doctor_cmd = [
+            "python3",
+            "scripts/run_doctor_variance.py",
+            "--run-id",
+            args.run_id,
+            "--backend",
+            args.backend,
+            "--enable-deepseek-doctor",
+            str(args.enable_deepseek_doctor),
+            "--enable-react-doctor",
+            str(args.enable_react_doctor),
+            "--react-max-steps",
+            str(args.react_max_steps),
+            "--react-timeout-sec",
+            str(args.react_timeout_sec),
+        ]
+        if control_run_id:
+            doctor_cmd.extend(["--control-run-id", control_run_id])
         _run_llm_step_budgeted(
             run_id=args.run_id,
             retry_policy=retry_policy,
-            cmd=_with_domain_template(
-                [
-                    "python3",
-                    "scripts/run_doctor_variance.py",
-                    "--run-id",
-                    args.run_id,
-                    "--backend",
-                    args.backend,
-                    "--enable-deepseek-doctor",
-                    str(args.enable_deepseek_doctor),
-                    "--enable-react-doctor",
-                    str(args.enable_react_doctor),
-                    "--react-max-steps",
-                    str(args.react_max_steps),
-                    "--react-timeout-sec",
-                    str(args.react_timeout_sec),
-                ],
-                args,
-            ),
+            cmd=_with_domain_template(doctor_cmd, args),
             step_name="run_doctor_variance",
             log_file=log_file,
             extra_env=llm_env,
@@ -1011,18 +1426,89 @@ def _run_core_agents_and_proof_steps(
         log_file=log_file,
         error_code_on_fail="CONTEXT_CONFLICT",
     )
+    _run_gate_step(
+        run_id=args.run_id,
+        gate_name="experiment_duration_gate",
+        step_name="run_experiment_duration_gate",
+        cmd=_py(
+            "scripts/run_experiment_duration_gate.py",
+            "--run-id",
+            args.run_id,
+            "--experiment-id",
+            exp_id,
+        ),
+        log_file=log_file,
+        error_code_on_fail="EXPERIMENT_DURATION_INSUFFICIENT",
+    )
 
     anti_goodhart_cmd = ["python3", "scripts/run_anti_goodhart_verdict.py", "--run-id", args.run_id]
     if exp_id:
         anti_goodhart_cmd.extend(["--experiment-id", exp_id])
-    _run_gate_step(
-        run_id=args.run_id,
-        gate_name="anti_goodhart_sot",
-        step_name="run_anti_goodhart_verdict",
-        cmd=anti_goodhart_cmd,
-        log_file=log_file,
-        error_code_on_fail="ANTI_GOODHART_MISMATCH",
-    )
+    _record_required_gate_execution("anti_goodhart_sot")
+    anti_goodhart_partial_override = False
+    try:
+        _run_step(anti_goodhart_cmd, "run_anti_goodhart_verdict", log_file)
+    except SystemExit:
+        gate_payload: dict[str, Any] | None = None
+        try:
+            gate_payload = load_json_with_integrity(gate_result_path(args.run_id, "anti_goodhart_sot"))
+        except Exception:
+            gate_payload = None
+        gate_code = str((gate_payload or {}).get("error_code", "")).strip().upper()
+        allow_partial_override = False
+        effective_status = str(paired_status or "").strip().upper()
+        if paired_mode and gate_code == "AB_ARTIFACT_REQUIRED":
+            if effective_status in {PairedRunStatus.TREATMENT_FAILED.value, PairedRunStatus.PARTIAL.value}:
+                allow_partial_override = True
+            elif effective_status == PairedRunStatus.COMPLETE.value and isinstance(paired_registry_payload, dict):
+                paired_registry_payload = _promote_partial_from_treatment_failure(
+                    paired_registry_payload,
+                    reason="treatment_failed_before_anti_goodhart_ab_required",
+                )
+                paired_status = str((paired_registry_payload or {}).get("paired_status", "")).strip().upper() or "PARTIAL"
+                allow_partial_override = True
+        if allow_partial_override and gate_code == "AB_ARTIFACT_REQUIRED":
+            anti_goodhart_partial_override = True
+            ctrl_run_id = str((paired_registry_payload or {}).get("ctrl_run_id", "")).strip() if isinstance(
+                paired_registry_payload, dict
+            ) else ""
+            partial_ctx = _write_paired_experiment_context(
+                run_id=args.run_id,
+                experiment_id=exp_id,
+                ctrl_run_id=ctrl_run_id or f"{args.run_id}_ctrl",
+                treatment_run_id=args.run_id,
+                paired_status=PairedRunStatus.PARTIAL.value,
+                partial_reason="anti_goodhart_missing_ab_artifact",
+                failed_step="anti_goodhart_sot",
+                decision_ceiling="HOLD_NEED_DATA",
+            )
+            paired_registry_payload = _sync_paired_registry_refs(
+                paired_registry_payload,
+                status=PairedRunStatus.PARTIAL.value,
+                error_code="AB_ARTIFACT_REQUIRED",
+                reason="anti_goodhart_missing_ab_artifact",
+                paired_context_ref=_artifact_ref(partial_ctx),
+            )
+            _write_gate_result_safe(
+                args.run_id,
+                gate_name="anti_goodhart_sot",
+                status="PASS",
+                error_code="NONE",
+                blocked_by=[],
+                required_actions=["enforce_forced_ceiling_hold_need_data"],
+                details={
+                    "paired_override": True,
+                    "paired_status": paired_status or "PARTIAL",
+                    "forced_ceiling": "HOLD_NEED_DATA",
+                    "original_error_code": "AB_ARTIFACT_REQUIRED",
+                },
+                critical=True,
+            )
+            print(
+                "WARN anti_goodhart override applied: paired partial mode + AB_ARTIFACT_REQUIRED -> continue with forced ceiling"
+            )
+        else:
+            raise
 
     evaluator_cmd = ["python3", "scripts/run_experiment_evaluator.py", "--run-id", args.run_id]
     if exp_id:
@@ -1094,6 +1580,15 @@ def _run_core_agents_and_proof_steps(
         raise
     _write_gate_result_safe(args.run_id, gate_name="commander", status="PASS", error_code="NONE", critical=True)
     _record_required_gate_execution("commander")
+    if anti_goodhart_partial_override or bool(paired_mode and is_partial_like(paired_status)):
+        paired_status_forced = str(paired_status or "").strip().upper()
+        if not is_partial_like(paired_status_forced):
+            paired_status_forced = PairedRunStatus.PARTIAL.value
+        _enforce_forced_ceiling_on_commander(
+            args.run_id,
+            reason="paired_partial_ab_artifact_required",
+            paired_status=paired_status_forced,
+        )
     _run_gate_step(
         run_id=args.run_id,
         gate_name="historical_retrieval_conformance_gate",
@@ -1118,6 +1613,9 @@ def _run_core_proof_path(
     feature_state: dict[str, Any],
     retry_policy: dict[str, Any],
     hypothesis_review_flag: int = 0,
+    paired_mode: bool = False,
+    paired_status: str = "",
+    paired_registry_payload: dict[str, Any] | None = None,
 ) -> tuple[bool, list[str]]:
     clean_layer_enabled, missing_views = _run_simulation_and_foundation_steps(
         args=args,
@@ -1135,11 +1633,9 @@ def _run_core_proof_path(
         llm_env=llm_env,
         retry_policy=retry_policy,
         hypothesis_review_flag=hypothesis_review_flag,
-    )
-    _ensure_provisional_reconciliation_or_exit(
-        run_id=args.run_id,
-        log_file=log_file,
-        feature_state=feature_state,
+        paired_mode=paired_mode,
+        paired_status=paired_status,
+        paired_registry_payload=paired_registry_payload,
     )
     return clean_layer_enabled, missing_views
 
@@ -1242,6 +1738,7 @@ def _run_eval_publish_tail(
     lightweight: bool,
     build_reports_cmd: list[str],
     security_profile: dict[str, Any],
+    feature_state: dict[str, Any],
 ) -> None:
     _run_py_step_specs(
         run_id=args.run_id,
@@ -1257,6 +1754,12 @@ def _run_eval_publish_tail(
             },
             {"step_name": "run_agent_value_eval", "script": "scripts/run_agent_value_eval.py"},
         ],
+    )
+    # Reconciliation requires outcomes-ledger/context produced in eval stage.
+    _ensure_provisional_reconciliation_or_exit(
+        run_id=args.run_id,
+        log_file=log_file,
+        feature_state=feature_state,
     )
 
     _try_run_step(build_reports_cmd, "build_reports_refresh", log_file, enabled=not lightweight)
@@ -1391,6 +1894,7 @@ def _run_reporting_tail(
     llm_env: dict[str, str] | None,
     lightweight: bool,
     security_profile: dict[str, Any],
+    feature_state: dict[str, Any],
     retry_policy: dict[str, Any],
     hypothesis_review_flag: int = 0,
 ) -> None:
@@ -1410,6 +1914,7 @@ def _run_reporting_tail(
         lightweight=lightweight,
         build_reports_cmd=build_reports_cmd,
         security_profile=security_profile,
+        feature_state=feature_state,
     )
 
 
@@ -1490,31 +1995,211 @@ def main() -> None:
 
         app_engine = _engine(app_dsn)
         _check_db_identity(app_engine, EXPECTED_DB, EXPECTED_APP_USER)
+        _preflight_validate_goal1_schema_contract_or_exit(app_engine)
+        _preflight_validate_locked_historical_corpus_or_exit()
         _run_raw_reload_if_requested(args=args, log_file=runtime.log_file, loader_dsn=loader_dsn)
         _enforce_runtime_limits_for_run_or_exit(args.run_id, runtime_limits, feature_state)
+        paired_registry_payload = _init_or_load_paired_registry(
+            run_id=args.run_id,
+            run_id_ctrl=str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl"),
+            experiment_id=runtime.exp_id,
+            mode=str(getattr(runtime, "mode", "single") or "single"),
+        )
+        paired_mode = str(getattr(runtime, "mode", "single") or "single").strip().lower() == "paired"
+        paired_status = (
+            str((paired_registry_payload or {}).get("paired_status", "")).strip().upper()
+            if isinstance(paired_registry_payload, dict)
+            else ""
+        )
+        ctrl_audit_path: Path | None = None
+        paired_variants = load_experiment_variants(runtime.domain_template) if paired_mode else None
+        if paired_mode:
+            ctrl_variant = (paired_variants or {}).get("ctrl") if isinstance(paired_variants, dict) else None
+            treatment_variant = (paired_variants or {}).get("treatment") if isinstance(paired_variants, dict) else None
+            try:
+                ctrl_audit_path = _run_ctrl_foundation_only(
+                    args=args,
+                    exp_id=runtime.exp_id,
+                    run_id_ctrl=str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl"),
+                    log_file=runtime.log_file,
+                    app_engine=app_engine,
+                    ctrl_variant=ctrl_variant if isinstance(ctrl_variant, dict) else None,
+                )
+                paired_registry_payload = _sync_paired_registry_refs(
+                    paired_registry_payload,
+                    status=PairedRunStatus.COMPLETE.value,
+                    error_code="NONE",
+                    reason="paired_ctrl_foundation_ready",
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                )
+                if isinstance(treatment_variant, dict):
+                    if str(treatment_variant.get("mode_tag", "")).strip():
+                        args.mode_tag = str(treatment_variant.get("mode_tag"))
+                    if treatment_variant.get("horizon_days") is not None:
+                        try:
+                            args.horizon_days = int(treatment_variant.get("horizon_days"))
+                        except Exception:
+                            pass
+                    if treatment_variant.get("seed") is not None:
+                        try:
+                            args.seed = int(treatment_variant.get("seed"))
+                        except Exception:
+                            pass
+                    overrides = treatment_variant.get("overrides")
+                    if isinstance(overrides, dict):
+                        for key, value in overrides.items():
+                            key_str = str(key)
+                            if hasattr(args, key_str):
+                                setattr(args, key_str, value)
+            except SystemExit:
+                failed_ctx = _write_paired_experiment_context(
+                    run_id=args.run_id,
+                    experiment_id=runtime.exp_id,
+                    ctrl_run_id=str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl"),
+                    treatment_run_id=args.run_id,
+                    paired_status=PairedRunStatus.CTRL_FAILED.value,
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                    failure_reason="ctrl_foundation_failed_before_treatment",
+                    failed_step="ctrl_foundation",
+                )
+                paired_registry_payload = _mark_ctrl_foundation_failed(
+                    paired_registry_payload,
+                    reason="ctrl_foundation_failed_before_treatment",
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                )
+                paired_registry_payload = _sync_paired_registry_refs(
+                    paired_registry_payload,
+                    status=PairedRunStatus.CTRL_FAILED.value,
+                    error_code="CTRL_FOUNDATION_SCOPE_VIOLATION",
+                    reason="ctrl_foundation_failed_before_treatment",
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                    paired_context_ref=_artifact_ref(failed_ctx),
+                )
+                raise
+        paired_status = (
+            str((paired_registry_payload or {}).get("paired_status", "")).strip().upper()
+            if isinstance(paired_registry_payload, dict)
+            else paired_status
+        )
 
-        clean_layer_enabled, missing_views = _run_core_proof_path(
-            args=args,
-            exp_id=runtime.exp_id,
-            log_file=runtime.log_file,
-            llm_env=runtime.llm_env,
-            app_engine=app_engine,
-            runtime_limits=runtime_limits,
-            feature_state=feature_state,
-            retry_policy=retry_policy,
-            hypothesis_review_flag=hypothesis_review_flag,
-        )
-        _enforce_runtime_limits_for_run_or_exit(args.run_id, runtime_limits, feature_state)
-        _run_reporting_tail(
-            args=args,
-            exp_id=runtime.exp_id,
-            log_file=runtime.log_file,
-            llm_env=runtime.llm_env,
-            lightweight=runtime.lightweight,
-            security_profile=security_profile,
-            retry_policy=retry_policy,
-            hypothesis_review_flag=hypothesis_review_flag,
-        )
+        try:
+            clean_layer_enabled, missing_views = _run_core_proof_path(
+                args=args,
+                exp_id=runtime.exp_id,
+                log_file=runtime.log_file,
+                llm_env=runtime.llm_env,
+                app_engine=app_engine,
+                runtime_limits=runtime_limits,
+                feature_state=feature_state,
+                retry_policy=retry_policy,
+                hypothesis_review_flag=hypothesis_review_flag,
+                paired_mode=paired_mode,
+                paired_status=paired_status,
+                paired_registry_payload=paired_registry_payload,
+            )
+            _enforce_runtime_limits_for_run_or_exit(args.run_id, runtime_limits, feature_state)
+            _run_reporting_tail(
+                args=args,
+                exp_id=runtime.exp_id,
+                log_file=runtime.log_file,
+                llm_env=runtime.llm_env,
+                lightweight=runtime.lightweight,
+                security_profile=security_profile,
+                feature_state=feature_state,
+                retry_policy=retry_policy,
+                hypothesis_review_flag=hypothesis_review_flag,
+            )
+        except SystemExit:
+            if paired_mode:
+                paired_registry_payload = _promote_partial_from_treatment_failure(
+                    paired_registry_payload,
+                    reason="treatment_pipeline_failed",
+                )
+                failed_ctx = _write_paired_experiment_context(
+                    run_id=args.run_id,
+                    experiment_id=runtime.exp_id,
+                    ctrl_run_id=str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl"),
+                    treatment_run_id=args.run_id,
+                    paired_status=PairedRunStatus.TREATMENT_FAILED.value,
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                    partial_reason="treatment_pipeline_failed",
+                    failed_step="treatment_pipeline",
+                    decision_ceiling="HOLD_NEED_DATA",
+                )
+                paired_registry_payload = _sync_paired_registry_refs(
+                    paired_registry_payload,
+                    status=PairedRunStatus.TREATMENT_FAILED.value,
+                    error_code="AB_ARTIFACT_REQUIRED",
+                    reason="treatment_pipeline_failed",
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                    paired_context_ref=_artifact_ref(failed_ctx),
+                )
+            raise
+        if paired_mode:
+            try:
+                latest_registry = load_registry_for_run(args.run_id, required=True)
+            except Exception as exc:
+                raise SystemExit(f"PAIRED_REGISTRY_KEY_INVALID: {exc}")
+            if not isinstance(latest_registry, dict):
+                raise SystemExit("PAIRED_REGISTRY_KEY_INVALID: missing_or_invalid_registry_payload")
+            paired_registry_payload = latest_registry
+            final_paired_status = (
+                str((paired_registry_payload or {}).get("paired_status", "")).strip().upper()
+                if isinstance(paired_registry_payload, dict)
+                else ""
+            )
+            if final_paired_status == PairedRunStatus.COMPLETE.value:
+                paired_context_path = _write_paired_experiment_context(
+                    run_id=args.run_id,
+                    experiment_id=runtime.exp_id,
+                    ctrl_run_id=str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl"),
+                    treatment_run_id=args.run_id,
+                    paired_status=PairedRunStatus.COMPLETE.value,
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                )
+                paired_registry_payload = _sync_paired_registry_refs(
+                    paired_registry_payload,
+                    status=PairedRunStatus.COMPLETE.value,
+                    error_code="NONE",
+                    reason="paired_complete",
+                    audit_ref=_artifact_ref(ctrl_audit_path) if isinstance(ctrl_audit_path, Path) else "",
+                    paired_context_ref=_artifact_ref(paired_context_path),
+                )
+                _ctrl_run_id_for_stat = str(getattr(runtime, "run_id_ctrl", "") or f"{args.run_id}_ctrl")
+                _ctrl_snapshot_p = Path(f"data/metrics_snapshots/{_ctrl_run_id_for_stat}.json")
+                _trt_snapshot_p = Path(f"data/metrics_snapshots/{args.run_id}.json")
+                _stat_bundle_out = stat_evidence_bundle_path(args.run_id)
+                try:
+                    _stat_bundle = compute_stat_evidence(
+                        _ctrl_snapshot_p,
+                        _trt_snapshot_p,
+                        str(runtime.domain_template or ""),
+                        paired_status=PairedRunStatus.COMPLETE.value,
+                    )
+                    _stat_bundle_out.parent.mkdir(parents=True, exist_ok=True)
+                    _stat_bundle_out.write_text(
+                        json.dumps(_stat_bundle.to_dict(), ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    write_sha256_sidecar(_stat_bundle_out)
+                    print(f"[stat_engine] stat_evidence_bundle written run_id={args.run_id}")
+                except Exception as _stat_exc:
+                    print(f"[stat_engine] WARNING: stat_evidence_bundle not written: {_stat_exc}")
+                _try_run_step(
+                    _py(
+                        "scripts/update_history_corpus.py",
+                        "--run-id",
+                        args.run_id,
+                    ),
+                    "update_history_corpus",
+                    runtime.log_file,
+                    enabled=True,
+                )
+            _enforce_paired_partial_ceiling_or_exit(
+                run_id=args.run_id,
+                paired_mode=True,
+                paired_registry_payload=paired_registry_payload,
+            )
         _assert_required_gate_execution_order_or_exit()
         _enforce_runtime_limits_for_run_or_exit(args.run_id, runtime_limits, feature_state)
         _validate_core_llm_authenticity(args)

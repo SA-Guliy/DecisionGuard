@@ -1,0 +1,5 @@
+{
+  "version": "experiment_duration_policy_v1",
+  "min_experiment_days": 14,
+  "safe_decision_before_min_days": "HOLD_NEED_DATA"
+}

@@ -39,10 +39,11 @@ from src.domain_template import (
 from src.reasoning_feature_flags import load_reasoning_feature_flags
 from src.semantic_scoring import hypothesis_format_ok
 from src.status_taxonomy import goal_from_metric
-from src.architecture_v3 import load_json_optional_with_integrity
+from src.architecture_v3 import load_json_optional_with_integrity, paired_experiment_context_path, stat_evidence_bundle_path
 from src.security_utils import sha256_sidecar_path, write_sha256_sidecar
 from src.visible_reasoning_trace import build_visible_reasoning_trace_advisory
 from src.runtime_failover import build_runtime_failover_tiers, generate_with_runtime_failover
+from src.stat_engine import compute_stat_evidence
 
 DOCTOR_VARIANCE_GROQ_MODEL = DOCTOR_GROQ_FALLBACK_MODEL
 DOCTOR_VARIANCE_DEEPSEEK_MODEL = DOCTOR_GROQ_PRIMARY_MODEL
@@ -68,6 +69,8 @@ NON-NEGOTIABLE:
 1) Never invent facts; use only provided artifacts/fields.
 2) Lock primary metric to experiment north_star_metric / AB primary_metric.
    - Never substitute primary metric with supporting or guardrail metrics.
+   - CRITICAL GOAL ALIGNMENT RULE: hypothesis_portfolio for the current AB contour must stay aligned with ab_primary_goal.
+     Cross-goal ideas are allowed only as `next experiment` references, not as current-goal replacements.
 3) If ab_status in {MISSING_ASSIGNMENT, METHODOLOGY_MISMATCH, INVALID_METHODS, ASSIGNMENT_RECOVERED}
    OR measurement_state in {UNOBSERVABLE, BLOCKED_BY_DATA}:
    - Do NOT claim uplift, do NOT recommend RUN_AB or ROLLOUT.
@@ -84,13 +87,17 @@ Given decision_card + metrics_snapshot + ab_report (if valid) + dq + synthetic_b
 A) Build >=3 hypothesis_portfolio items across configured goals from domain_template.
 B) For each hypothesis include: action, mechanism, target_metric, expected_uplift_range, guardrails from domain_template,
    falsifiability, and design contract fields (pre_period_weeks, wash_in_days, attribution_window_rule, test_side).
-C) If AB is valid and aligned, interpret with strict hypothesis testing:
+C) LIVE EXPERIMENT EVIDENCE (Layers 1+2) is mandatory for paired COMPLETE runs:
+   - layer1_verdict from stat_evidence_bundle_v1 (primary metric inference)
+   - layer2_guardrail_verdicts from stat_evidence_bundle_v1 (guardrail veto surface)
+   - if Layers 1+2 are missing/underpowered/inconclusive, keep conservative ceiling (no aggressive decision).
+D) If AB is valid and aligned, interpret with strict hypothesis testing:
    - H0: treatment == control
    - alpha=0.05 unless specified
    - p<=alpha and CI excludes 0 => Reject H0
    - p>alpha => Fail to Reject H0
    - p/CI inconsistency => INCONCLUSIVE with method explanation
-D) If AB is invalid/misaligned, return measurement_fix_plan with missing items, 3 minimal steps, expected measurable outcome.
+E) If AB is invalid/misaligned, return measurement_fix_plan with missing items, 3 minimal steps, expected measurable outcome.
 
 ALLOWED METHODS:
 - Continuous: Welch t-test (bootstrap if heavy skew)
@@ -2179,10 +2186,19 @@ def _write_doctor_context(
     measurement_state: str,
     ab_status: str,
     ab_report: dict[str, Any] | None,
+    paired_status: str,
+    layers_present: dict[str, Any],
+    reasoning_confidence_inputs: dict[str, Any],
+    stat_bundle_ref: str | None,
 ) -> Path:
     metrics = snapshot.get("metrics", {}) if isinstance(snapshot.get("metrics"), dict) else {}
     run_cfg = snapshot.get("run_config", {}) if isinstance(snapshot.get("run_config"), dict) else {}
     ab_summary = ab_report.get("summary", {}) if isinstance(ab_report, dict) and isinstance(ab_report.get("summary"), dict) else {}
+    ab_primary_metric = str(ab_summary.get("primary_metric", "")).strip()
+    try:
+        ab_primary_goal = goal_from_metric(ab_primary_metric)
+    except Exception:
+        ab_primary_goal = "unknown"
     decision_trace_path = Path(f"data/decision_traces/{run_id}_actions.jsonl")
     decision_trace_sample: list[dict[str, Any]] = []
     if decision_trace_path.exists():
@@ -2230,12 +2246,16 @@ def _write_doctor_context(
             "measurement_state": measurement_state,
             "ab_status": ab_status,
             "srm_status": ab_summary.get("srm_status"),
-            "ab_primary_metric": ab_summary.get("primary_metric"),
+            "ab_primary_metric": ab_primary_metric,
+            "ab_primary_goal": ab_primary_goal,
+            "paired_status": str(paired_status or "SINGLE").strip().upper(),
             "sample_size": {
                 "control_orders": ab_summary.get("n_orders_control"),
                 "treatment_orders": ab_summary.get("n_orders_treatment"),
             },
         },
+        "layers_present": layers_present if isinstance(layers_present, dict) else {},
+        "reasoning_confidence_inputs": reasoning_confidence_inputs if isinstance(reasoning_confidence_inputs, dict) else {},
         "goal_blocks": goal_blocks,
         "guardrails": {
             str(row.get("metric", "")): metrics.get(str(row.get("metric", "")))
@@ -2267,6 +2287,7 @@ def _write_doctor_context(
             "captain_report": f"data/llm_reports/{run_id}_captain.json",
             "ab_report": (f"data/ab_reports/{run_id}_{experiment_id}_ab.json" if experiment_id else None),
             "synthetic_bias_report": f"data/realism_reports/{run_id}_synthetic_bias.json",
+            "stat_evidence_bundle": stat_bundle_ref,
         },
     }
     path = Path(f"data/agent_context/{run_id}_doctor_context.json")
@@ -2347,6 +2368,106 @@ def _stat_metric_type(metric: str) -> str:
     if m:
         return "continuous"
     return "unknown"
+
+
+def _artifact_ref_to_path(value: Any) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("artifact:"):
+        raw = raw[len("artifact:") :]
+    if "#" in raw:
+        raw = raw.split("#", 1)[0]
+    if not raw.strip():
+        return None
+    return Path(raw)
+
+
+def _load_paired_context_payload(run_id: str) -> tuple[dict[str, Any] | None, str]:
+    path = paired_experiment_context_path(run_id)
+    try:
+        payload = load_json_optional_with_integrity(path, required=False)
+    except Exception as exc:
+        raise RuntimeError(f"METHODOLOGY_INVARIANT_BROKEN:paired_context_integrity_error:{exc}") from exc
+    if not isinstance(payload, dict):
+        return None, "SINGLE"
+    status = str(payload.get("paired_status", "SINGLE")).strip().upper() or "SINGLE"
+    return payload, status
+
+
+def _resolve_ctrl_snapshot_path(
+    *,
+    run_id: str,
+    control_run_id: str,
+    paired_context: dict[str, Any] | None,
+    paired_status: str,
+) -> Path | None:
+    if control_run_id.strip():
+        return Path(f"data/metrics_snapshots/{control_run_id.strip()}.json")
+    if not isinstance(paired_context, dict):
+        return None
+    if str(paired_status).strip().upper() != "COMPLETE":
+        return None
+    layer1 = paired_context.get("layer1", {}) if isinstance(paired_context.get("layer1"), dict) else {}
+    ctrl_ref = _artifact_ref_to_path(layer1.get("ctrl_metrics_snapshot_ref"))
+    if isinstance(ctrl_ref, Path):
+        return ctrl_ref
+    ctrl_run_id = str(paired_context.get("ctrl_run_id", "")).strip()
+    if ctrl_run_id:
+        return Path(f"data/metrics_snapshots/{ctrl_run_id}.json")
+    return None
+
+
+def _best_similarity_from_history_rows(rows: list[dict[str, Any]]) -> float | None:
+    best: float | None = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            score = float(row.get("similarity_score"))
+        except Exception:
+            continue
+        if best is None or score > best:
+            best = score
+    return best
+
+
+def _extract_primary_metric_pvalue(
+    stat_bundle: dict[str, Any],
+    primary_metric: str,
+) -> float | None:
+    rows = stat_bundle.get("metrics", []) if isinstance(stat_bundle.get("metrics"), list) else []
+    primary_key = str(primary_metric or "").strip()
+    target_row: dict[str, Any] | None = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("metric_id", "")).strip() == primary_key:
+            target_row = row
+            break
+    if target_row is None and rows:
+        target_row = rows[0] if isinstance(rows[0], dict) else None
+    if not isinstance(target_row, dict):
+        return None
+    try:
+        value = target_row.get("p_value")
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _guardrail_data_complete_from_bundle(stat_bundle: dict[str, Any]) -> bool:
+    rows = stat_bundle.get("guardrail_status_check", []) if isinstance(stat_bundle.get("guardrail_status_check"), list) else []
+    if not rows:
+        return False
+    for row in rows:
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("status", "")).strip().upper() == "NO_DATA":
+            return False
+    return True
 
 
 def _infer_expected_direction_from_experiment(experiment: dict[str, Any]) -> str:
@@ -2781,6 +2902,13 @@ def _validate_output_contract(payload: dict[str, Any]) -> None:
         "guardrails",
         "blocked_metrics",
         "ab_risks",
+        "layer1_verdict",
+        "layer2_guardrail_verdicts",
+        "alternative_hypotheses",
+        "temporal_risk",
+        "sensitivity_note",
+        "layers_present",
+        "reasoning_confidence_inputs",
         "required_human_approval",
         "next_actions",
         "contract_version",
@@ -2801,6 +2929,16 @@ def _validate_output_contract(payload: dict[str, Any]) -> None:
                 raise ValueError(f"reason missing {key}")
     if not isinstance(payload["ab_risks"], list):
         raise ValueError("ab_risks must be list")
+    if str(payload.get("layer1_verdict", "")).strip().upper() == "":
+        raise ValueError("layer1_verdict missing")
+    if not isinstance(payload.get("layer2_guardrail_verdicts"), list):
+        raise ValueError("layer2_guardrail_verdicts must be list")
+    if not isinstance(payload.get("alternative_hypotheses"), list):
+        raise ValueError("alternative_hypotheses must be list")
+    if not isinstance(payload.get("layers_present"), dict):
+        raise ValueError("layers_present must be object")
+    if not isinstance(payload.get("reasoning_confidence_inputs"), dict):
+        raise ValueError("reasoning_confidence_inputs must be object")
     for idx, risk in enumerate(payload["ab_risks"]):
         if not isinstance(risk, dict):
             raise ValueError(f"ab_risks[{idx}] must be object")
@@ -3033,9 +3171,62 @@ def main() -> None:
         if not historical_context_pack_sha256:
             raise RuntimeError("HISTORICAL_CONTEXT_INTEGRITY_FAIL:historical_context_pack_sidecar_missing")
 
+        paired_context_payload, paired_status = _load_paired_context_payload(run_id)
         control_snapshot = None
-        if args.control_run_id:
-            control_snapshot = _load_json(Path(f"data/metrics_snapshots/{args.control_run_id}.json"), "control snapshot")
+        control_snapshot_path = _resolve_ctrl_snapshot_path(
+            run_id=run_id,
+            control_run_id=str(args.control_run_id or ""),
+            paired_context=paired_context_payload,
+            paired_status=paired_status,
+        )
+        control_run_id = ""
+        if isinstance(control_snapshot_path, Path):
+            if control_snapshot_path.exists():
+                control_snapshot = _load_json(control_snapshot_path, "control snapshot")
+                control_run_id = control_snapshot_path.stem
+            elif paired_status == "COMPLETE":
+                raise RuntimeError(
+                    "METHODOLOGY_INVARIANT_BROKEN:missing_control_snapshot_for_paired_complete"
+                )
+        elif paired_status == "COMPLETE":
+            raise RuntimeError(
+                "METHODOLOGY_INVARIANT_BROKEN:control_snapshot_ref_missing_for_paired_complete"
+            )
+
+        stat_bundle_payload: dict[str, Any] = {}
+        stat_bundle_ref: str | None = None
+        stat_bundle_error = ""
+        stat_bundle_sha256 = ""
+        bundle_path = stat_evidence_bundle_path(run_id)
+        if paired_status == "COMPLETE":
+            try:
+                if not isinstance(control_snapshot_path, Path):
+                    raise RuntimeError("control_snapshot_path_unresolved")
+                bundle = compute_stat_evidence(
+                    control_snapshot_path,
+                    Path(f"data/metrics_snapshots/{run_id}.json"),
+                    str(args.domain_template or domain_template_source()),
+                    paired_status=paired_status,
+                )
+                stat_bundle_payload = bundle.to_dict()
+                bundle_path.parent.mkdir(parents=True, exist_ok=True)
+                bundle_path.write_text(json.dumps(stat_bundle_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+                write_sha256_sidecar(bundle_path)
+                stat_bundle_sidecar = sha256_sidecar_path(bundle_path)
+                if stat_bundle_sidecar.exists():
+                    stat_bundle_sha256 = stat_bundle_sidecar.read_text(encoding="utf-8").strip().lower()
+                stat_bundle_ref = f"artifact:{bundle_path}#"
+            except Exception as exc:
+                stat_bundle_error = str(exc).splitlines()[0][:240]
+        else:
+            # Optional load for single/partial context; no hard dependency.
+            loaded_bundle = load_json_optional_with_integrity(bundle_path, required=False)
+            if isinstance(loaded_bundle, dict):
+                stat_bundle_payload = loaded_bundle
+                stat_bundle_ref = f"artifact:{bundle_path}#"
+                stat_bundle_sidecar = sha256_sidecar_path(bundle_path)
+                if stat_bundle_sidecar.exists():
+                    stat_bundle_sha256 = stat_bundle_sidecar.read_text(encoding="utf-8").strip().lower()
 
         metrics = snapshot.get("metrics", {}) if isinstance(snapshot.get("metrics"), dict) else {}
         run_cfg = snapshot.get("run_config", {}) if isinstance(snapshot.get("run_config"), dict) else {}
@@ -3055,6 +3246,33 @@ def main() -> None:
                 ab_status = "invalid"
                 srm_status = "MISSING"
         domain_reference = _domain_reference_pack()
+        ab_summary_ctx = ab_report.get("summary", {}) if isinstance(ab_report, dict) and isinstance(ab_report.get("summary"), dict) else {}
+        ab_primary_metric_ctx = str(ab_summary_ctx.get("primary_metric", "")).strip()
+        best_analog_similarity = _best_similarity_from_history_rows(historical_context_rows)
+        layers_present = (
+            stat_bundle_payload.get("layers_present", {})
+            if isinstance(stat_bundle_payload.get("layers_present"), dict)
+            else {}
+        )
+        if not isinstance(layers_present, dict) or not layers_present:
+            layers_present = {
+                "layer1_live_stats": False,
+                "layer2_guardrail_check": False,
+                "layer3_history": True,
+            }
+        guardrail_data_complete = _guardrail_data_complete_from_bundle(stat_bundle_payload) if isinstance(stat_bundle_payload, dict) else False
+        reasoning_confidence_inputs: dict[str, Any] = {
+            "layers_present": layers_present,
+            "p_value": _extract_primary_metric_pvalue(stat_bundle_payload, ab_primary_metric_ctx),
+            "best_analog_similarity": best_analog_similarity,
+            "guardrail_data_complete": guardrail_data_complete,
+            "n_min": int(stat_bundle_payload.get("n_min_required", 0) or 0) if isinstance(stat_bundle_payload, dict) else 0,
+            "srm_pass": bool(not bool(stat_bundle_payload.get("srm_flag", False))) if isinstance(stat_bundle_payload, dict) else False,
+            "paired_status": paired_status,
+            "stat_bundle_ref": stat_bundle_ref,
+            "stat_bundle_status": str(stat_bundle_payload.get("status", "")).strip().upper() if isinstance(stat_bundle_payload, dict) else "",
+            "stat_bundle_error": stat_bundle_error or None,
+        }
         if experiment_id and ab_status in {"MISSING_ASSIGNMENT", "MISSING", "INVALID"}:
             assignment_status = "missing"
         plan_start = datetime.now(timezone.utc).date()
@@ -3086,6 +3304,27 @@ def main() -> None:
         ab_risks: list[dict[str, Any]] = []
         next_actions: list[str] = []
         decision = "RUN_AB"
+        if paired_status == "COMPLETE":
+            bundle_status = str(stat_bundle_payload.get("status", "")).strip().upper() if isinstance(stat_bundle_payload, dict) else ""
+            if bundle_status != "PASS":
+                decision = "HOLD_NEED_DATA"
+                reasons.append(
+                    _reason(
+                        "missing_live_stat_evidence",
+                        "HARD_FAIL",
+                        "Paired COMPLETE run requires stat evidence bundle with PASS status for Layers 1+2.",
+                        [f"artifact:{bundle_path}#"] if bundle_path else [f"artifact:data/agent_context/{run_id}_stat_evidence_bundle_v1.json#"],
+                    )
+                )
+                if stat_bundle_error:
+                    reasons.append(
+                        _reason(
+                            "stat_evidence_bundle_error",
+                            "WARN",
+                            f"Stat evidence build error: {stat_bundle_error}",
+                            [f"artifact:{bundle_path}#"] if bundle_path else [],
+                        )
+                    )
 
         captain_decision, captain_reasons, captain_risks = _captain_checks(captain, run_id)
         reasons.extend(captain_reasons)
@@ -3772,6 +4011,10 @@ def main() -> None:
             measurement_state=measurement_state,
             ab_status=ab_status_upper or "MISSING",
             ab_report=ab_report,
+            paired_status=paired_status,
+            layers_present=layers_present,
+            reasoning_confidence_inputs=reasoning_confidence_inputs,
+            stat_bundle_ref=stat_bundle_ref,
         )
 
         ensemble_path = Path(f"data/ensemble_reports/{_base_run_id(run_id)}_ensemble.json")
@@ -3832,6 +4075,12 @@ def main() -> None:
             "ab_plan": ab_plan,
             "ab_risks": ab_risks,
             "next_actions": next_actions,
+            "live_experiment_evidence": {
+                "layers_present": layers_present,
+                "reasoning_confidence_inputs": reasoning_confidence_inputs,
+                "stat_evidence_bundle_ref": stat_bundle_ref,
+                "stat_evidence_bundle": stat_bundle_payload,
+            },
             "historical_context_pack": historical_context_rows[:5],
         }
         exploratory_ideas = [
@@ -3906,6 +4155,52 @@ def main() -> None:
             or str((human_summary_llm_provenance or {}).get("fallback_tier", "")).strip()
             or ("deterministic" if provisional_local_fallback else "none")
         )
+        stat_bundle_status = str(stat_bundle_payload.get("status", "")).strip().upper() if isinstance(stat_bundle_payload, dict) else ""
+        if paired_status == "COMPLETE":
+            live_ready = bool(layers_present.get("layer1_live_stats", False)) and bool(layers_present.get("layer2_guardrail_check", False))
+            if stat_bundle_status != "PASS" or not live_ready:
+                if decision in {"RUN_AB", "ROLLOUT_CANDIDATE"}:
+                    decision = "HOLD_NEED_DATA"
+                reasons.append(
+                    _reason(
+                        "paired_complete_requires_live_layers",
+                        "HARD_FAIL",
+                        "paired_status=COMPLETE requires Layer1+Layer2 stat evidence before aggressive decision.",
+                        [f"artifact:{bundle_path}#"],
+                    )
+                )
+        stat_metrics_rows = stat_bundle_payload.get("metrics", []) if isinstance(stat_bundle_payload.get("metrics"), list) else []
+        stat_primary_metric = ab_primary_metric_ctx or _goal_to_default_metric(_default_goal_id())
+        layer1_row = None
+        for row in stat_metrics_rows:
+            if isinstance(row, dict) and str(row.get("metric_id", "")).strip() == str(stat_primary_metric).strip():
+                layer1_row = row
+                break
+        if layer1_row is None and stat_metrics_rows and isinstance(stat_metrics_rows[0], dict):
+            layer1_row = stat_metrics_rows[0]
+        layer1_verdict = str((layer1_row or {}).get("verdict", "NO_DATA")).strip().upper()
+        layer2_guardrail_verdicts = (
+            stat_bundle_payload.get("guardrail_status_check", [])
+            if isinstance(stat_bundle_payload.get("guardrail_status_check"), list)
+            else []
+        )
+        alt_hypotheses: list[str] = []
+        for hyp in hypothesis_portfolio[1:4]:
+            if not isinstance(hyp, dict):
+                continue
+            txt = str(hyp.get("mechanism", "")).strip() or str(hyp.get("hypothesis_statement", "")).strip()
+            if txt:
+                alt_hypotheses.append(txt[:220])
+        temporal_risk = (
+            "high_temporal_risk"
+            if measurement_state in {"UNOBSERVABLE", "BLOCKED_BY_DATA"} or srm_status in {"WARN", "FAIL"}
+            else "temporal_risk_controlled"
+        )
+        sensitivity_note = (
+            "Layer-1/2 evidence incomplete; keep conservative ceiling and re-run after more data."
+            if layer1_verdict in {"UNDERPOWERED", "NO_DATA", "INCONCLUSIVE"} or not guardrail_data_complete
+            else "Layer-1/2 evidence present with guardrail checks; sensitivity acceptable under current assumptions."
+        )
 
         out = {
             "agent_name": "Doctor Variance",
@@ -3932,6 +4227,11 @@ def main() -> None:
             "recommended_experiment": recommended_experiment,
             "ab_interpretation_methodology": ab_interpretation_methodology,
             "measurement_fix_plan": measurement_fix_plan,
+            "layer1_verdict": layer1_verdict,
+            "layer2_guardrail_verdicts": layer2_guardrail_verdicts,
+            "alternative_hypotheses": alt_hypotheses,
+            "temporal_risk": temporal_risk,
+            "sensitivity_note": sensitivity_note,
             "required_human_approval": _approval_for_decision(decision),
             "next_actions": next_actions,
             "exploratory_ideas": exploratory_ideas,
@@ -3942,7 +4242,7 @@ def main() -> None:
             "inputs": {
                 "dq_status": dq.get("qa_status"),
                 "captain_verdict": ((captain.get("result", {}) or {}).get("verdict") if isinstance(captain, dict) else None),
-                "control_run_id": args.control_run_id,
+                "control_run_id": (control_run_id or args.control_run_id),
                 "control_snapshot_present": control_snapshot is not None,
                 "doctor_context": str(doctor_context_path),
             },
@@ -3954,12 +4254,23 @@ def main() -> None:
             "trace_refs": [
                 f"artifact:{historical_context_pack_path}#",
                 f"artifact:{doctor_context_path}#",
+                *( [stat_bundle_ref] if stat_bundle_ref else [] ),
             ],
             "artifact_hash_refs": [
                 {
                     "artifact_ref": str(historical_context_pack_path),
                     "sha256": historical_context_pack_sha256,
-                }
+                },
+                *(
+                    [
+                        {
+                            "artifact_ref": str(bundle_path),
+                            "sha256": stat_bundle_sha256,
+                        }
+                    ]
+                    if stat_bundle_sha256
+                    else []
+                ),
             ],
             "evidence": {
                 "dq_report": f"artifact:data/dq_reports/{run_id}.json#",
@@ -3967,6 +4278,7 @@ def main() -> None:
                 "metrics_snapshot": f"artifact:data/metrics_snapshots/{run_id}.json#",
                 "doctor_context": f"artifact:{doctor_context_path}#",
                 "historical_context_pack": f"artifact:{historical_context_pack_path}#",
+                "stat_evidence_bundle": stat_bundle_ref,
                 "ab_report": (
                     f"artifact:data/ab_reports/{run_id}_{experiment_id}_ab.json#"
                     if experiment_id
@@ -3978,6 +4290,15 @@ def main() -> None:
             "assignment_status": assignment_status,
             "measurement_state": measurement_state,
             "measurement_state_reason": measurement_state_reason,
+            "paired_status": paired_status,
+            "layers_present": layers_present,
+            "reasoning_confidence_inputs": reasoning_confidence_inputs,
+            "guardrail_status_check": (
+                stat_bundle_payload.get("guardrail_status_check", [])
+                if isinstance(stat_bundle_payload.get("guardrail_status_check"), list)
+                else []
+            ),
+            "stat_evidence_bundle_ref": stat_bundle_ref,
             "reasoning_mode": reasoning_mode,
             "model_used": model_used,
             "fallback_tier": fallback_tier_final,
@@ -4013,6 +4334,13 @@ def main() -> None:
                     "used": True,
                     "pack_ref": str(historical_context_pack_path),
                     "rows_used": len(historical_context_rows),
+                },
+                "stat_evidence_bundle": {
+                    "status": str(stat_bundle_payload.get("status", "")).strip().upper()
+                    if isinstance(stat_bundle_payload, dict)
+                    else "",
+                    "ref": stat_bundle_ref,
+                    "error": stat_bundle_error or None,
                 },
             },
             "protocol_checks_passed": protocol_checks_passed,

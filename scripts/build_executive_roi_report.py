@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.security_utils import verify_sha256_sidecar
+from src.security_utils import verify_sha256_sidecar, write_sha256_sidecar
 
 
 SOURCE_PRIORITY = {
@@ -361,6 +361,38 @@ def _derive_verdict(checks: list[tuple[str, str, str]]) -> tuple[str, str]:
     return "GO", "All configured thresholds passed."
 
 
+def _build_roi_section(
+    *,
+    avg_rollout_cost_usd: float,
+    prevented_bad_decisions: int,
+    missed_harmful_rollouts: int,
+) -> dict[str, Any]:
+    avg_cost = float(avg_rollout_cost_usd)
+    prevented = max(0, int(prevented_bad_decisions))
+    missed = max(0, int(missed_harmful_rollouts))
+    if avg_cost <= 0.0:
+        return {
+            "status": "estimate_unavailable",
+            "reason": "avg_rollout_cost_usd_not_positive",
+            "avg_rollout_cost_usd": avg_cost,
+            "prevented_bad_decisions": prevented,
+            "missed_harmful_rollouts": missed,
+            "estimated_saved_usd": None,
+        }
+    prevented_loss = prevented * avg_cost
+    missed_loss = missed * avg_cost
+    net_saved = prevented_loss - missed_loss
+    return {
+        "status": "estimated",
+        "avg_rollout_cost_usd": avg_cost,
+        "prevented_bad_decisions": prevented,
+        "missed_harmful_rollouts": missed,
+        "estimated_prevented_loss_usd": round(prevented_loss, 2),
+        "estimated_missed_loss_usd": round(missed_loss, 2),
+        "estimated_saved_usd": round(net_saved, 2),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build executive-facing ROI scorecard from batch/cost/failover artifacts.")
     parser.add_argument("--batch-id", default="", help="Optional batch id (expects data/batch_eval/<batch_id>_summary.json)")
@@ -370,6 +402,13 @@ def main() -> None:
     parser.add_argument("--reconciliation-events", default="data/reconciliation/reconciliation_events.jsonl")
     parser.add_argument("--reconciliation-summary", default="data/reconciliation/reconciliation_accuracy_summary.json")
     parser.add_argument("--out", default="data/reports/EXECUTIVE_ROI_SCORECARD.md")
+    parser.add_argument("--out-json", default="", help="Optional machine-readable output path")
+    parser.add_argument(
+        "--avg-rollout-cost-usd",
+        type=float,
+        default=50000.0,
+        help="Average avoided rollout loss used for business value estimate (default: 50000)",
+    )
     parser.add_argument(
         "--integrity-required",
         type=int,
@@ -522,6 +561,31 @@ def main() -> None:
     if protected_decisions_warning:
         md_lines.append(f"- Warning: {protected_decisions_warning}")
 
+    roi_section = _build_roi_section(
+        avg_rollout_cost_usd=float(args.avg_rollout_cost_usd),
+        prevented_bad_decisions=prevented_bad_decisions,
+        missed_harmful_rollouts=fn_count,
+    )
+    md_lines.extend(
+        [
+            "",
+            "## Business Value Estimate",
+        ]
+    )
+    if roi_section.get("status") == "estimate_unavailable":
+        md_lines.append(
+            f"- `estimate_unavailable`: avg rollout cost is not positive (`{roi_section.get('avg_rollout_cost_usd')}`)."
+        )
+    else:
+        md_lines.extend(
+            [
+                f"- Avg rollout cost assumption (USD): **{_usd(float(roi_section.get('avg_rollout_cost_usd')))}**",
+                f"- Estimated prevented loss (USD): **{_usd(float(roi_section.get('estimated_prevented_loss_usd')))}**",
+                f"- Estimated missed loss (USD): **{_usd(float(roi_section.get('estimated_missed_loss_usd')))}**",
+                f"- **Estimated net saved money (USD): {_usd(float(roi_section.get('estimated_saved_usd')))}**",
+            ]
+        )
+
     md_lines.extend(
         [
             "",
@@ -583,6 +647,30 @@ def main() -> None:
         out_path = ROOT / out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    write_sha256_sidecar(out_path)
+
+    out_json_path = Path(args.out_json) if str(args.out_json or "").strip() else Path("data/reports/EXECUTIVE_ROI_SCORECARD.json")
+    if not out_json_path.is_absolute():
+        out_json_path = ROOT / out_json_path
+    out_json_path.parent.mkdir(parents=True, exist_ok=True)
+    machine_payload = {
+        "version": "executive_roi_scorecard_v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "batch_summary_source": str(batch_path),
+        "batch_id": str(batch.get("batch_id", "unknown")),
+        "verdict": verdict,
+        "availability": availability,
+        "false_negative_rate": fnr,
+        "false_positive_rate": fpr,
+        "total_cost_usd": total_cost,
+        "cost_per_audit_usd": cost_per_audit,
+        "cost_per_protected_decision_usd": cost_per_protected_decision,
+        "prevented_bad_decisions": prevented_bad_decisions,
+        "missed_harmful_rollouts": fn_count,
+        "roi_section": roi_section,
+    }
+    out_json_path.write_text(json.dumps(machine_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_sha256_sidecar(out_json_path)
 
     print(f"ok: executive ROI scorecard written {out_path}")
     print(

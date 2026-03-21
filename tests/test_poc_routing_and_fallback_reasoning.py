@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,6 +17,66 @@ from scripts import run_poc_e2e as poc_mod
 
 
 class PocRoutingAndFallbackReasoningTests(unittest.TestCase):
+    def test_groq_secrets_not_required_for_edge_only(self) -> None:
+        loaded, source, key = poc_mod._load_groq_secrets_conditional(need_cloud=False, strict=False)
+        self.assertFalse(loaded)
+        self.assertEqual(source, "not_required")
+        self.assertEqual(key, "")
+
+    def test_groq_secrets_required_for_cloud_missing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_home:
+            with mock.patch.dict(os.environ, {"GROQ_API_KEY": "", "HOME": tmp_home}, clear=False):
+                with self.assertRaises(SystemExit) as ctx:
+                    poc_mod._load_groq_secrets_conditional(need_cloud=True, strict=True)
+        self.assertIn("Missing ~/.groq_secrets", str(ctx.exception))
+
+    def test_groq_secrets_source_is_sanitized_label(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_home:
+            secrets_path = Path(tmp_home) / ".groq_secrets"
+            secrets_path.write_text("GROQ_API_KEY=gsk_TEST12345678901234567890\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"GROQ_API_KEY": "", "HOME": tmp_home}, clear=False):
+                loaded, source, key = poc_mod._load_groq_secrets_conditional(need_cloud=True, strict=True)
+        self.assertTrue(loaded)
+        self.assertEqual(source, "home_groq_secrets")
+        self.assertTrue(key.startswith("gsk_"))
+
+    def test_safe_error_reason_redacts_groq_key(self) -> None:
+        msg = "auth failed for gsk_ABCDEF1234567890ABCDEFGH with Bearer QWERTY1234567890TOKEN"
+        redacted = poc_mod._safe_error_reason(msg, limit=500)
+        self.assertNotIn("gsk_ABCDEF1234567890ABCDEFGH", redacted)
+        self.assertIn("gsk_[REDACTED]", redacted)
+        self.assertNotIn("Bearer QWERTY1234567890TOKEN", redacted)
+        self.assertIn("Bearer [REDACTED]", redacted)
+
+    def test_sanitization_kms_source_normalized(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"SANITIZATION_KMS_MASTER_KEY": "k1", "SANITIZATION_KMS_SOURCE": ""},
+            clear=False,
+        ):
+            loaded, source = poc_mod._ensure_sanitization_kms_master_key()
+            self.assertTrue(loaded)
+            self.assertEqual(source, "env_provided")
+
+        with mock.patch.dict(
+            os.environ,
+            {"SANITIZATION_KMS_MASTER_KEY": "k2", "SANITIZATION_KMS_SOURCE": "vault"},
+            clear=False,
+        ):
+            loaded, source = poc_mod._ensure_sanitization_kms_master_key()
+            self.assertTrue(loaded)
+            self.assertEqual(source, "vault")
+
+    def test_sandbox_key_emits_warning(self) -> None:
+        with mock.patch.dict(os.environ, {"SANITIZATION_KMS_MASTER_KEY": "", "SANITIZATION_LOCAL_DEMO_KEY": "demo_key"}, clear=False):
+            loaded, source = poc_mod._ensure_sanitization_kms_master_key()
+            self.assertFalse(loaded)
+            self.assertEqual(source, "sandbox_demo")
+            with mock.patch.object(poc_mod, "print") as mock_print:
+                poc_mod._emit_sanitization_kms_warning_if_needed(source)
+                mock_print.assert_called_once()
+                self.assertIn("SANDBOX KMS KEY IN USE", str(mock_print.call_args[0][0]))
+
     def test_captain_pass_status_overrides_false_pass_to_doctor(self) -> None:
         captain = {
             "sanity_status": " pass ",
@@ -71,4 +133,3 @@ class PocRoutingAndFallbackReasoningTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

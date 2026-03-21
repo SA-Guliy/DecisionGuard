@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.paired_registry import (
+    CTRL_FOUNDATION_ALLOWED_STEPS,
+    PAIRED_RUN_STATUS_VALUES,
+    PAIRED_STATUS_TRANSITIONS_ALLOWED,
+)
 from src.security_utils import verify_sha256_sidecar, write_sha256_sidecar
 
 CONTRACTS_DIR = Path("configs/contracts")
@@ -21,9 +26,14 @@ REQUIRED_V3_CONTRACTS = {
     "doctor_hypothesis_review": CONTRACTS_DIR / "doctor_hypothesis_review_v1.json",
     "decision_outcomes_ledger": CONTRACTS_DIR / "decision_outcomes_ledger_v1.json",
     "offline_kpi_backtest": CONTRACTS_DIR / "offline_kpi_backtest_v1.json",
+    "stat_evidence_bundle": CONTRACTS_DIR / "stat_evidence_bundle_v1.json",
+    "reasoning_confidence_policy": CONTRACTS_DIR / "reasoning_confidence_policy_v1.json",
     "sanitization_transform": CONTRACTS_DIR / "sanitization_transform_v1.json",
     "sanitization_policy": CONTRACTS_DIR / "sanitization_policy_v2.json",
     "reconciliation_policy": CONTRACTS_DIR / "reconciliation_policy_v1.json",
+    "paired_registry": CONTRACTS_DIR / "paired_registry_v1.json",
+    "paired_experiment": CONTRACTS_DIR / "paired_experiment_v2.json",
+    "experiment_duration_policy": CONTRACTS_DIR / "experiment_duration_policy_v1.json",
     "anti_goodhart_verdict": CONTRACTS_DIR / "anti_goodhart_verdict_v1.json",
     "quality_invariants": CONTRACTS_DIR / "quality_invariants_v1.json",
     "reasoning_score_policy": CONTRACTS_DIR / "reasoning_score_policy_v2.json",
@@ -41,7 +51,14 @@ REQUIRED_ERROR_CODES = {
     "SANITIZATION_AUDIT_TRAIL_MISSING",
     "MAP_ENCRYPTION_VERIFIED",
     "PROVISIONAL_REQUIRES_RECONCILIATION",
+    "EXPERIMENT_CONTEXT_REQUIRED",
+    "EXPERIMENT_DURATION_INSUFFICIENT",
+    "AB_ARTIFACT_REQUIRED",
     "ANTI_GOODHART_MISMATCH",
+    "CTRL_FOUNDATION_SCOPE_VIOLATION",
+    "PAIRED_RUN_ID_COLLISION",
+    "PAIRED_REGISTRY_KEY_INVALID",
+    "PAIRED_PARTIAL_CEILING_VIOLATION",
     "METHODOLOGY_INVARIANT_BROKEN",
     "MITIGATION_PROPOSALS_MISSING",
     "HYPOTHESIS_REVIEW_MISSING",
@@ -66,6 +83,7 @@ GATE_SEQUENCE = [
     "historical_retrieval_gate",
     "doctor",
     "handoff_contract_guard",
+    "experiment_duration_gate",
     "anti_goodhart_sot",
     "evaluator",
     "commander",
@@ -82,6 +100,7 @@ REQUIRED_GATE_ORDER = [
     "historical_retrieval_gate",
     "doctor",
     "handoff_contract_guard",
+    "experiment_duration_gate",
     "anti_goodhart_sot",
     "evaluator",
     "commander",
@@ -97,6 +116,9 @@ REQUIRED_GATE_ORDER = [
 SANITIZATION_TRANSFORM_PATH = CONTRACTS_DIR / "sanitization_transform_v1.json"
 SANITIZATION_POLICY_PATH = CONTRACTS_DIR / "sanitization_policy_v2.json"
 RECONCILIATION_POLICY_PATH = CONTRACTS_DIR / "reconciliation_policy_v1.json"
+PAIRED_STATUS_ENUM = PAIRED_RUN_STATUS_VALUES
+PAIRED_CTRL_FOUNDATION_ALLOWED_STEPS = CTRL_FOUNDATION_ALLOWED_STEPS
+PAIRED_STATUS_LIFECYCLE_ALLOWED = PAIRED_STATUS_TRANSITIONS_ALLOWED
 
 
 def historical_context_pack_path(run_id: str) -> Path:
@@ -117,6 +139,10 @@ def decision_outcomes_ledger_path(run_id: str) -> Path:
 
 def offline_kpi_backtest_path(run_id: str) -> Path:
     return Path(f"data/agent_eval/{run_id}_offline_kpi_backtest.json")
+
+
+def stat_evidence_bundle_path(run_id: str) -> Path:
+    return Path(f"data/agent_context/{run_id}_stat_evidence_bundle_v1.json")
 
 
 def _now_iso() -> str:
@@ -239,6 +265,10 @@ def context_frame_path(run_id: str) -> Path:
     return Path(f"data/agent_context/{run_id}_context_frame.json")
 
 
+def captain_artifact_path(run_id: str) -> Path:
+    return Path(f"data/llm_reports/{run_id}_captain.json")
+
+
 def handoff_guard_path(run_id: str) -> Path:
     return Path(f"data/agent_quality/{run_id}_handoff_contract_guard.json")
 
@@ -253,6 +283,14 @@ def reasoning_policy_path(run_id: str) -> Path:
 
 def governance_ceiling_path(run_id: str) -> Path:
     return Path(f"data/agent_quality/{run_id}_governance_ceiling.json")
+
+
+def paired_experiment_context_path(run_id: str) -> Path:
+    return Path(f"data/agent_context/{run_id}_paired_experiment_v2.json")
+
+
+def ctrl_foundation_audit_path(run_id: str) -> Path:
+    return Path(f"data/agent_quality/{run_id}_ctrl_foundation_audit.json")
 
 
 def list_gate_results(run_id: str) -> list[Path]:

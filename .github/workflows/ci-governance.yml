@@ -22,11 +22,15 @@ jobs:
           python3 -m py_compile \
             src/architecture_v3.py \
             src/llm_secure_gateway.py \
+            src/stat_engine.py \
+            src/reasoning_confidence.py \
             src/retrieval_runtime.py \
             scripts/run_all.py \
+            scripts/run_experiment_duration_gate.py \
             scripts/verify_acceptance.py \
             scripts/run_historical_retrieval_gate.py \
             scripts/run_agent_value_eval.py \
+            scripts/update_history_corpus.py \
             scripts/build_cost_ledger.py \
             scripts/build_investor_demo_staging.py \
             scripts/run_publish_release_audit.py
@@ -60,8 +64,29 @@ jobs:
             tests/test_runtime_controls_and_acceptance_events.py \
             tests/test_runtime_limits_enforcement.py \
             tests/test_historical_retrieval_gate_v32.py \
+            tests/test_run_all_requires_experiment_id.py \
+            tests/test_experiment_duration_gate.py \
+            tests/test_anti_goodhart_requires_ab.py \
+            tests/test_stat_engine.py \
+            tests/test_reasoning_confidence.py \
+            tests/test_doctor_paired_stat_wiring.py \
+            tests/test_commander_guardrail_mandate.py \
+            tests/test_history_corpus_update.py \
+            tests/test_publish_corpus_lock.py \
+            tests/test_paired_status_enum_canonical.py \
+            tests/test_ctrl_foundation_allowlist_guard.py \
+            tests/test_paired_registry_path_normalization.py \
+            tests/test_paired_partial_antigoodhart_policy.py \
+            tests/test_paired_partial_acceptance_flow.py \
+            tests/test_paired_partial_acceptance_e2e_pass.py \
+            tests/test_paired_run_id_collision_policy.py \
+            tests/test_single_mode_unchanged.py \
+            tests/test_single_mode_no_paired_artifacts_required.py \
             tests/test_real_kpi_ledger_logic.py \
-            tests/test_kpi_ledger_integrity_v2.py
+            tests/test_kpi_ledger_integrity_v2.py \
+            tests/test_poc_routing_and_fallback_reasoning.py \
+            tests/test_executive_roi_report_v2.py \
+            tests/test_reconciliation_worker_v2.py
 
       - name: Build sanitized demo staging
         run: |

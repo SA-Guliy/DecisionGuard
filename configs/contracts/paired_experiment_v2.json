@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Paired Experiment Context V2",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "experiment_id",
+    "ctrl_run_id",
+    "treatment_run_id",
+    "paired_status",
+    "generated_at"
+  ],
+  "properties": {
+    "version": {
+      "const": "paired_experiment_v2"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ctrl_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "treatment_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paired_status": {
+      "type": "string",
+      "enum": [
+        "COMPLETE",
+        "CTRL_FAILED",
+        "TREATMENT_FAILED",
+        "PARTIAL"
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "partial_reason": {
+      "type": "string"
+    },
+    "failure_reason": {
+      "type": "string"
+    },
+    "failed_step": {
+      "type": "string"
+    },
+    "decision_ceiling": {
+      "type": "string"
+    },
+    "merger_artifact_ref": {
+      "type": "string"
+    },
+    "layer1": {
+      "type": "object"
+    },
+    "layer2": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "paired_status": {
+            "const": "COMPLETE"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "layer1",
+          "layer2",
+          "merger_artifact_ref"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "paired_status": {
+            "const": "PARTIAL"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "partial_reason",
+          "decision_ceiling"
+        ],
+        "properties": {
+          "decision_ceiling": {
+            "const": "HOLD_NEED_DATA"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "paired_status": {
+            "const": "TREATMENT_FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "partial_reason",
+          "decision_ceiling",
+          "failed_step"
+        ],
+        "properties": {
+          "decision_ceiling": {
+            "const": "HOLD_NEED_DATA"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "paired_status": {
+            "const": "CTRL_FAILED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "failure_reason",
+          "failed_step"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "layer1"
+              ]
+            },
+            {
+              "required": [
+                "layer2"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

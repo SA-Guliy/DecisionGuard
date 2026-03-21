@@ -28,6 +28,7 @@ from src.model_policy import (
     DOCTOR_GROQ_PRIMARY_MODEL,
     doctor_reasoning_model_chain,
 )
+from src.reasoning_confidence import compute_reasoning_confidence
 import re
 
 
@@ -49,6 +50,8 @@ INTERACTIVE_MAX_TURNS = 5
 THINK_BLOCK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 PROVISIONAL_LOCAL_TAG = "[PROVISIONAL - LOCAL EDGE FALLBACK]"
 RUNTIME_GROQ_API_KEY = ""
+_GROQ_KEY_RE = re.compile(r"\bgsk_[A-Za-z0-9_\-]{12,}\b")
+_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{10,}\b")
 
 
 _TYPE_MAP: dict[str, type] = {
@@ -194,23 +197,58 @@ def _build_batch_record_v2(
             "was not fully conclusive."
         )
 
-    confidence_basis: list[str] = []
-    confidence_score = 0.72
-    if similarity < 0.2:
-        confidence_score -= 0.22
-        confidence_basis.append("low_historical_similarity")
-    elif similarity >= 0.6:
-        confidence_score += 0.08
-        confidence_basis.append("strong_historical_similarity")
+    commander_guardrail_status = (
+        commander.get("guardrail_status_check", [])
+        if isinstance(commander.get("guardrail_status_check"), list)
+        else []
+    )
+    guardrail_data_complete = True
+    if commander_guardrail_status:
+        for row in commander_guardrail_status:
+            if not isinstance(row, dict):
+                guardrail_data_complete = False
+                break
+            if str(row.get("status", "")).strip().upper() == "NO_DATA":
+                guardrail_data_complete = False
+                break
+    else:
+        guardrail_data_complete = False
+    reasoning_inputs = (
+        commander.get("reasoning_confidence_inputs", {})
+        if isinstance(commander.get("reasoning_confidence_inputs"), dict)
+        else {}
+    )
+    layers_present = (
+        reasoning_inputs.get("layers_present", {})
+        if isinstance(reasoning_inputs.get("layers_present"), dict)
+        else {
+            "layer1_live_stats": bool(commander_guardrail_status),
+            "layer2_guardrail_check": bool(commander_guardrail_status),
+            "layer3_history": bool(top_match),
+        }
+    )
+    confidence_score, confidence_basis = compute_reasoning_confidence(
+        layers_present,
+        reasoning_inputs.get("p_value"),
+        (similarity if top_match else None),
+        guardrail_data_complete,
+        int(reasoning_inputs.get("n_min", 0) or 0),
+        bool(reasoning_inputs.get("srm_pass", False)),
+        mode="single",
+        paired_status=str(reasoning_inputs.get("paired_status", "SINGLE") or "SINGLE"),
+        has_live_evidence=bool(layers_present.get("layer1_live_stats", False)) and bool(
+            layers_present.get("layer2_guardrail_check", False)
+        ),
+    )
     if bool(runtime_flags.get("provisional_local_fallback")):
-        confidence_score -= 0.18
-        confidence_basis.append("provisional_local_fallback")
+        confidence_score = max(0.0, confidence_score - 0.12)
+        confidence_basis.append("penalty:provisional_local_fallback")
     if bool(runtime_flags.get("backend_error")):
-        confidence_score -= 0.12
-        confidence_basis.append("backend_error_present")
+        confidence_score = max(0.0, confidence_score - 0.08)
+        confidence_basis.append("penalty:backend_error_present")
     if not top_match:
-        confidence_score -= 0.2
-        confidence_basis.append("missing_top_match")
+        confidence_score = max(0.0, confidence_score - 0.08)
+        confidence_basis.append("penalty:missing_top_match")
     confidence_score = max(0.05, min(0.95, confidence_score))
     confidence_label = "HIGH" if confidence_score >= 0.75 else ("MEDIUM" if confidence_score >= 0.5 else "LOW")
 
@@ -398,27 +436,34 @@ def _looks_like_retryable_api_error(text: str) -> bool:
     return any(m in t for m in markers)
 
 
+def _sanitize_sensitive_text(text: str) -> str:
+    raw = str(text or "")
+    out = _GROQ_KEY_RE.sub("gsk_[REDACTED]", raw)
+    out = _BEARER_RE.sub("Bearer [REDACTED]", out)
+    out = out.replace(str(Path.home() / ".groq_secrets"), "~/.groq_secrets")
+    return out
+
+
+def _safe_error_reason(exc: Exception | str, *, limit: int = 220) -> str:
+    first_line = str(exc).splitlines()[0] if str(exc) else ""
+    return _sanitize_sensitive_text(first_line)[:limit]
+
+
+def _debug_cloud_error(model_name: str, exc: Exception) -> None:
+    print(f"[DEBUG CLOUD ERROR] Model {model_name} failed: {_safe_error_reason(exc, limit=320)}")
+
+
 def _load_groq_secrets_conditional(*, need_cloud: bool, strict: bool) -> tuple[bool, str, str]:
     if not need_cloud:
         return False, "not_required", ""
 
-    # Priority: explicit env -> local .env -> ~/.groq_secrets
+    # Priority: explicit env -> ~/.groq_secrets
     env_key = str(os.getenv("GROQ_API_KEY", "")).strip()
     if env_key:
         if env_key.startswith("gsk_") and len(env_key) >= 20:
-            return True, "env:GROQ_API_KEY", env_key
+            return True, "env", env_key
         if strict:
             raise SystemExit("ConfigurationError: Invalid GROQ_API_KEY format in env")
-
-    env_path = ROOT / ".env"
-    if env_path.exists() and env_path.is_file():
-        load_dotenv(env_path, override=False)
-        env_file_key = str(os.getenv("GROQ_API_KEY", "")).strip()
-        if env_file_key:
-            if env_file_key.startswith("gsk_") and len(env_file_key) >= 20:
-                return True, f"file:{env_path}", env_file_key
-            if strict:
-                raise SystemExit("ConfigurationError: Invalid GROQ_API_KEY format in .env")
 
     secrets_path = Path(os.path.expanduser("~/.groq_secrets"))
     if not secrets_path.exists() or not secrets_path.is_file():
@@ -449,28 +494,35 @@ def _load_groq_secrets_conditional(*, need_cloud: bool, strict: bool) -> tuple[b
         if strict:
             raise SystemExit("ConfigurationError: Failed to load GROQ_API_KEY from ~/.groq_secrets")
         return False, "env_load_mismatch", ""
-    return True, str(secrets_path), loaded_key
+    return True, "home_groq_secrets", loaded_key
 
 
 def _ensure_sanitization_kms_master_key() -> tuple[bool, str]:
     # Priority: explicit env -> local .env -> local demo fallback.
+    # Source values are normalized for downstream artifacts.
     env_secret = str(os.getenv("SANITIZATION_KMS_MASTER_KEY", "")).strip()
+    source_hint = str(os.getenv("SANITIZATION_KMS_SOURCE", "")).strip().lower()
     if env_secret:
-        return True, "env:SANITIZATION_KMS_MASTER_KEY"
+        if source_hint == "vault":
+            return True, "vault"
+        return True, "env_provided"
 
     env_path = ROOT / ".env"
     if env_path.exists() and env_path.is_file():
         load_dotenv(env_path, override=False)
         env_file_secret = str(os.getenv("SANITIZATION_KMS_MASTER_KEY", "")).strip()
         if env_file_secret:
-            return True, f"file:{env_path}"
+            source_hint = str(os.getenv("SANITIZATION_KMS_SOURCE", "")).strip().lower()
+            if source_hint == "vault":
+                return True, "vault"
+            return True, "env_provided"
 
     # Local development safety default for POC runs.
     fallback_secret = str(os.getenv("SANITIZATION_LOCAL_DEMO_KEY", "local_demo_key_123")).strip()
     if not fallback_secret:
         fallback_secret = "local_demo_key_123"
     os.environ["SANITIZATION_KMS_MASTER_KEY"] = fallback_secret
-    return False, "default:local_demo_key_123"
+    return False, "sandbox_demo"
 
 
 def _cloud_path_requested(backend_name: str) -> bool:
@@ -480,6 +532,11 @@ def _cloud_path_requested(backend_name: str) -> bool:
     if b == "auto":
         return os.getenv("LLM_ALLOW_REMOTE", "0") == "1"
     return False
+
+
+def _emit_sanitization_kms_warning_if_needed(source: str) -> None:
+    if str(source or "").strip().lower() == "sandbox_demo":
+        print("WARNING SANDBOX KMS KEY IN USE")
 
 
 def _call_llm_with_observability(
@@ -673,8 +730,8 @@ def _captain_sanity_check(
         )
     except Exception as exc:
         captain_backend_error = True
-        print(f"[DEBUG CLOUD ERROR] Model {model_name} failed: {repr(exc)}")
-        cloud_failures.append(str(exc).splitlines()[0][:220])
+        _debug_cloud_error(model_name, exc)
+        cloud_failures.append(_safe_error_reason(exc))
         if edge_backend_name:
             try:
                 raw, meta = _call_llm_with_observability(
@@ -687,7 +744,7 @@ def _captain_sanity_check(
                 )
                 edge_fallback_used = True
             except Exception as edge_exc:
-                cloud_failures.append(str(edge_exc).splitlines()[0][:220])
+                cloud_failures.append(_safe_error_reason(edge_exc))
                 if not allow_heuristic_edge_fallback:
                     raise edge_exc
                 status, issues, pass_to_doctor = _captain_heuristic_sanity(hypothesis)
@@ -696,7 +753,7 @@ def _captain_sanity_check(
                     agent="captain_edge_heuristic",
                     backend=edge_backend_name or backend_name,
                     model=edge_model_name or "edge_heuristic",
-                    reason=f"captain_backend_error:{str(edge_exc).splitlines()[0][:220]}",
+                    reason=f"captain_backend_error:{_safe_error_reason(edge_exc)}",
                 )
                 meta["edge_fallback_used"] = True
                 meta["cloud_failures"] = cloud_failures
@@ -718,7 +775,7 @@ def _captain_sanity_check(
                 agent="captain_edge_heuristic",
                 backend=backend_name,
                 model="edge_heuristic",
-                reason=f"captain_backend_error:{str(exc).splitlines()[0][:220]}",
+                reason=f"captain_backend_error:{_safe_error_reason(exc)}",
             )
             meta["edge_fallback_used"] = True
             meta["cloud_failures"] = cloud_failures
@@ -836,9 +893,9 @@ def _doctor_analysis(
             )
             break
         except Exception as exc:
-            print(f"[DEBUG CLOUD ERROR] Model {model_name} failed: {repr(exc)}")
+            _debug_cloud_error(model_name, exc)
             last_exc = exc
-            cloud_failures.append(str(exc).splitlines()[0][:220])
+            cloud_failures.append(_safe_error_reason(exc))
             continue
     edge_fallback_used = False
     if not raw and edge_backend_name:
@@ -859,7 +916,7 @@ def _doctor_analysis(
             if last_exc:
                 raise last_exc
             raise RuntimeError("Doctor cloud call failed and heuristic fallback disabled")
-        reason = str(last_exc).splitlines()[0][:220] if last_exc else "doctor_edge_unavailable"
+        reason = _safe_error_reason(last_exc) if last_exc else "doctor_edge_unavailable"
         top_breach_metric = ""
         top_similarity = 0.0
         if historical_context_pack:
@@ -991,8 +1048,8 @@ def _commander_decision(
             user_prompt=user_prompt,
         )
     except Exception as exc_primary:
-        print(f"[DEBUG CLOUD ERROR] Model {primary_model} failed: {repr(exc_primary)}")
-        cloud_failures.append(str(exc_primary).splitlines()[0][:220])
+        _debug_cloud_error(primary_model, exc_primary)
+        cloud_failures.append(_safe_error_reason(exc_primary))
         try:
             if simulate_cloud_outage and backend_name in {"groq", "auto"}:
                 raise RuntimeError("simulated_cloud_outage_commander_fallback")
@@ -1005,8 +1062,8 @@ def _commander_decision(
                 user_prompt=user_prompt,
             )
         except Exception as exc_fallback:
-            print(f"[DEBUG CLOUD ERROR] Model {fallback_model} failed: {repr(exc_fallback)}")
-            cloud_failures.append(str(exc_fallback).splitlines()[0][:220])
+            _debug_cloud_error(fallback_model, exc_fallback)
+            cloud_failures.append(_safe_error_reason(exc_fallback))
             raw = ""
             if edge_backend_name:
                 try:
@@ -1024,7 +1081,7 @@ def _commander_decision(
                 except Exception as exc_edge:
                     if not allow_heuristic_edge_fallback:
                         raise exc_edge
-                    reason = str(exc_edge).splitlines()[0][:220]
+                    reason = _safe_error_reason(exc_edge)
                     meta = _append_synthetic_trace(
                         run_id=run_id,
                         agent="commander_edge_heuristic",
@@ -1221,13 +1278,13 @@ def _run_cloud_reconciliation(
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:
-        print(f"[DEBUG CLOUD ERROR] Model reconciliation_chain failed: {repr(exc)}")
+        _debug_cloud_error("reconciliation_chain", exc)
         return {
             "status": "FAILED",
             "cloud_decision": "UNAVAILABLE",
             "provisional_decision": provisional_decision,
             "decision_match": False,
-            "notes": str(exc).splitlines()[0][:260],
+            "notes": _safe_error_reason(exc, limit=260),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -1351,7 +1408,7 @@ def _commander_interactive_reply(
             user_prompt=user_prompt,
         )
     except Exception as exc_primary:
-        print(f"[DEBUG CLOUD ERROR] Model {primary_model} failed: {repr(exc_primary)}")
+        _debug_cloud_error(primary_model, exc_primary)
         try:
             return _call_llm_with_observability(
                 run_id=run_id,
@@ -1362,7 +1419,7 @@ def _commander_interactive_reply(
                 user_prompt=user_prompt,
             )
         except Exception as exc_fallback:
-            print(f"[DEBUG CLOUD ERROR] Model {fallback_model} failed: {repr(exc_fallback)}")
+            _debug_cloud_error(fallback_model, exc_fallback)
             raise
 
 
@@ -1405,7 +1462,7 @@ def _interactive_audit_loop(
                 fallback_model=fallback_model,
             )
         except Exception as exc:
-            reason = f"interactive_backend_error:{str(exc).splitlines()[0][:220]}"
+            reason = f"interactive_backend_error:{_safe_error_reason(exc)}"
             _append_synthetic_trace(
                 run_id=run_id,
                 agent="commander_interactive_failed",
@@ -1461,10 +1518,11 @@ def main() -> None:
     args = parser.parse_args()
 
     sanitization_kms_loaded, sanitization_kms_source = _ensure_sanitization_kms_master_key()
+    _emit_sanitization_kms_warning_if_needed(sanitization_kms_source)
     need_cloud = _cloud_path_requested(args.backend) or bool(args.reconcile)
     cloud_credentials_loaded, cloud_secret_source, cloud_api_key = _load_groq_secrets_conditional(
         need_cloud=need_cloud,
-        strict=bool(args.reconcile),
+        strict=need_cloud,
     )
     global RUNTIME_GROQ_API_KEY
     RUNTIME_GROQ_API_KEY = str(cloud_api_key or "").strip()

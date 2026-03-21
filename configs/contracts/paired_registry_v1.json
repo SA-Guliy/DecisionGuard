@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Paired Registry V1",
+  "type": "object",
+  "required": [
+    "version",
+    "mode",
+    "experiment_id",
+    "parent_run_id",
+    "ctrl_run_id",
+    "treatment_run_id",
+    "paired_status",
+    "created_at",
+    "updated_at",
+    "error_code",
+    "reason",
+    "paired_context_ref",
+    "audit_ref"
+  ],
+  "properties": {
+    "version": {
+      "const": "paired_registry_v1"
+    },
+    "mode": {
+      "type": "string",
+      "const": "paired"
+    },
+    "experiment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ctrl_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "treatment_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paired_status": {
+      "type": "string",
+      "enum": [
+        "COMPLETE",
+        "CTRL_FAILED",
+        "TREATMENT_FAILED",
+        "PARTIAL"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "error_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paired_context_ref": {
+      "type": "string"
+    },
+    "audit_ref": {
+      "type": "string"
+    },
+    "status_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "reason",
+          "changed_at"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "enum": [
+              "",
+              "COMPLETE",
+              "CTRL_FAILED",
+              "TREATMENT_FAILED",
+              "PARTIAL"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "enum": [
+              "COMPLETE",
+              "CTRL_FAILED",
+              "TREATMENT_FAILED",
+              "PARTIAL"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "paired_status": {
+            "enum": [
+              "COMPLETE",
+              "PARTIAL",
+              "TREATMENT_FAILED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "paired_context_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

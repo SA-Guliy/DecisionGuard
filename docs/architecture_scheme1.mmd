@@ -1,0 +1,60 @@
+flowchart TD
+  A[Incoming A/B Test + Hypothesis]:::data --> B[Metrics Snapshot / DQ]:::data
+  B --> C[Captain]:::captain
+
+  C --> D[Semantic Retrieval Query Builder]:::data
+  D --> E[(Vector Database)]:::data
+  E --> F[Top-K Similar Experiment IDs]:::data
+  F --> G[(Historical Ledger / Structured SoT)]:::data
+  G --> H[historical_context_pack]:::obs
+
+  H --> I[Doctor]:::doctor
+  I --> J[context_frame gate]:::security
+  J --> K[handoff_contract_guard gate]:::security
+  K --> L[anti_goodhart_verdict SoT]:::security
+  L --> M[Evaluator]:::data
+  M --> N[Commander]:::commander
+  N --> O[quality_invariants gate]:::security
+  O --> P[reasoning_score_policy gate]:::security
+  P --> Q[governance_ceiling gate]:::hitl
+  Q --> R[verify_acceptance]:::hitl
+  R --> S[pre_publish_audit]:::security
+  S --> T[Decision Card + Reports]:::obs
+
+  U[(domain_template.json)]:::data --> C
+  U --> I
+  U --> M
+  U --> N
+
+  V[(JSON Contracts + .sha256)]:::security --> J
+  V --> K
+  V --> L
+  V --> O
+  V --> P
+  V --> Q
+  V --> R
+  V --> S
+
+  subgraph L1[Scheme 1 Legend]
+    LP[PASS]:::pass
+    LW[WARN / INCONCLUSIVE]:::warn
+    LF[FAIL / BLOCKED / STOP]:::fail
+    LH[HOLD_NEED_DATA]:::hold
+    LR[RUN_AB]:::runab
+    LC[ROLLOUT_CANDIDATE]:::rollout
+  end
+
+  classDef data fill:#EAF2FF,stroke:#2563EB,color:#0F172A,stroke-width:1.5px;
+  classDef captain fill:#E6F7F8,stroke:#0E7490,color:#0F172A,stroke-width:1.5px;
+  classDef doctor fill:#EAFBF3,stroke:#15803D,color:#0F172A,stroke-width:1.5px;
+  classDef commander fill:#FFF2E8,stroke:#C2410C,color:#0F172A,stroke-width:1.5px;
+  classDef hitl fill:#FFF7D6,stroke:#CA8A04,color:#0F172A,stroke-width:1.5px;
+  classDef security fill:#FFECEC,stroke:#B91C1C,color:#0F172A,stroke-width:1.5px;
+  classDef obs fill:#F4EEFF,stroke:#7C3AED,color:#0F172A,stroke-width:1.5px;
+
+  classDef pass fill:#EAFBF3,stroke:#16A34A,color:#14532D,stroke-width:1.5px;
+  classDef warn fill:#FFF7D6,stroke:#D97706,color:#7C2D12,stroke-width:1.5px;
+  classDef fail fill:#FFECEC,stroke:#DC2626,color:#7F1D1D,stroke-width:1.5px;
+  classDef hold fill:#FFF2E8,stroke:#C2410C,color:#7C2D12,stroke-width:1.5px;
+  classDef runab fill:#EAF2FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1.5px;
+  classDef rollout fill:#F4EEFF,stroke:#7C3AED,color:#4C1D95,stroke-width:1.5px;

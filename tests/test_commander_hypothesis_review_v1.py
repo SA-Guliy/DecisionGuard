@@ -70,12 +70,45 @@ class CommanderHypothesisReviewV1Tests(unittest.TestCase):
                 "refuted_count": 0,
                 "untestable_count": 0,
                 "refuted_high_count": 0,
+                "goal_alignment_status": "UNKNOWN",
+                "misaligned_hypothesis_count": 0,
                 "verification_quality_score": 1.0,
             },
         }
         ok, meta = acceptance_mod._validate_doctor_hypothesis_review_structure(commander_doc)
         self.assertTrue(ok, msg=str(meta))
         self.assertEqual(meta.get("issues"), [])
+
+    def test_doctor_respects_ab_primary_goal(self) -> None:
+        doctor = {
+            "hypothesis_portfolio": [
+                {
+                    "hypothesis_id": "h_goal_align",
+                    "target_metric": "aov",
+                    "impact_class": "medium",
+                    "expected_uplift_range": "+2%..+6%",
+                    "falsifiability_condition": "Reject if uplift <= 0%.",
+                    "evidence_refs": ["artifact:data/metrics_snapshots/x.json#/metrics/aov"],
+                }
+            ]
+        }
+        ab = {"summary": {"primary_metric": "aov"}}
+        with mock.patch.object(
+            commander_mod,
+            "goal_from_metric",
+            side_effect=lambda metric: "goal2" if str(metric).strip() == "aov" else "unknown",
+        ):
+            rows, summary, _ = commander_mod._verify_doctor_hypotheses(
+                run_id="ut_doctor_primary_goal_alignment",
+                doctor=doctor,
+                ab=ab,
+                ab_v2=None,
+            )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("goal_alignment"), "aligned")
+        self.assertIsNone(rows[0].get("cross_goal_reference"))
+        self.assertEqual(summary.get("goal_alignment_status"), "PASS")
+        self.assertEqual(int(summary.get("misaligned_hypothesis_count", -1)), 0)
 
     def test_sign_conflict_is_refuted(self) -> None:
         doctor = {
@@ -127,6 +160,8 @@ class CommanderHypothesisReviewV1Tests(unittest.TestCase):
                     "impact_class": "high",
                     "deterministic_verdict": "REFUTED",
                     "final_verdict": "REFUTED",
+                    "goal_alignment": "unknown",
+                    "cross_goal_reference": None,
                     "evidence_refs": ["artifact:data/metrics_snapshots/x.json#"],
                     "rationale": "sign conflict",
                     "mitigation": "collect better data",
@@ -139,6 +174,8 @@ class CommanderHypothesisReviewV1Tests(unittest.TestCase):
                 "refuted_count": 1,
                 "untestable_count": 0,
                 "refuted_high_count": 1,
+                "goal_alignment_status": "UNKNOWN",
+                "misaligned_hypothesis_count": 0,
                 "verification_quality_score": 0.3,
             },
             "review_blockers": ["h1:deterministic_sign_conflict"],
@@ -257,6 +294,8 @@ class CommanderHypothesisReviewV1Tests(unittest.TestCase):
                                 "deterministic_verdict": "SUPPORTED",
                                 "final_verdict": "SUPPORTED",
                                 "impact_class": "low",
+                                "goal_alignment": "unknown",
+                                "cross_goal_reference": None,
                                 "evidence_refs": ["artifact:data/metrics_snapshots/x.json#"],
                             }
                         ],
@@ -267,6 +306,8 @@ class CommanderHypothesisReviewV1Tests(unittest.TestCase):
                             "refuted_count": 0,
                             "untestable_count": 0,
                             "refuted_high_count": 0,
+                            "goal_alignment_status": "UNKNOWN",
+                            "misaligned_hypothesis_count": 0,
                             "verification_quality_score": 1.0,
                         },
                     },

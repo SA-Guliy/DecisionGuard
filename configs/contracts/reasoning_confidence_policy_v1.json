@@ -1,0 +1,23 @@
+{
+  "version": "reasoning_confidence_policy_v1",
+  "base_score": 0.58,
+  "significant_p_value_max": 0.05,
+  "analog_similarity_weight": 0.2,
+  "min_sample_size_n": 30,
+  "penalties": {
+    "layer1_missing": 0.2,
+    "layer2_missing": 0.15,
+    "guardrail_data_incomplete": 0.15,
+    "underpowered_or_no_data": 0.18,
+    "srm_failed": 0.12
+  },
+  "caps": {
+    "single_mode_no_live_evidence": 0.64,
+    "partial_or_failed_paired_status": 0.6,
+    "missing_layers12": 0.62
+  },
+  "score_bounds": {
+    "min": 0.0,
+    "max": 1.0
+  }
+}

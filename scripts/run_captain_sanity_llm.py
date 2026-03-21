@@ -156,7 +156,17 @@ def _validate_response_schema(obj: dict[str, Any]) -> None:
     for issue in issues:
         if not isinstance(issue, dict):
             raise ValueError("issue must be object")
-        expected_keys = {"check_name", "severity", "message", "hypotheses", "verification_steps", "evidence_refs"}
+        expected_keys = {
+            "check_name",
+            "severity",
+            "message",
+            "hypotheses",
+            "verification_steps",
+            "evidence_refs",
+            "observed_value",
+            "threshold",
+            "delta",
+        }
         if set(issue.keys()) != expected_keys:
             raise ValueError("issue keys mismatch")
         if issue["severity"] not in {"HARD_FAIL", "WARN", "INFO"}:
@@ -171,6 +181,12 @@ def _validate_response_schema(obj: dict[str, Any]) -> None:
             raise ValueError("verification_steps must be list with max 3")
         if not isinstance(issue["evidence_refs"], list) or len(issue["evidence_refs"]) > 5:
             raise ValueError("evidence_refs must be list with max 5")
+        if issue.get("observed_value") is not None and not isinstance(issue.get("observed_value"), (str, int, float)):
+            raise ValueError("observed_value must be scalar or null")
+        if issue.get("threshold") is not None and not isinstance(issue.get("threshold"), (str, int, float)):
+            raise ValueError("threshold must be scalar or null")
+        if issue.get("delta") is not None and not isinstance(issue.get("delta"), (str, int, float)):
+            raise ValueError("delta must be scalar or null")
 
     recs = obj["recommendations"]
     if not isinstance(recs, list) or len(recs) > 5:
@@ -180,6 +196,20 @@ def _validate_response_schema(obj: dict[str, Any]) -> None:
 def _issue_has_evidence_refs(issue: dict[str, Any]) -> bool:
     refs = issue.get("evidence_refs", [])
     return isinstance(refs, list) and any(str(r).strip() for r in refs)
+
+
+def _coerce_issue_scalar(value: Any, *, max_len: int = 160) -> str | float | int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        try:
+            return float(value) if isinstance(value, float) else int(value)
+        except Exception:
+            return None
+    text = coerce_string(value, max_len=max_len)
+    return text or None
 
 
 def _is_read_only_select_step(step: str, *, allow_psql: bool) -> bool:
@@ -320,6 +350,18 @@ def _normalize_captain_candidate(
         if "evidence_ref" in d and "evidence_refs" not in d:
             d["evidence_refs"] = [d["evidence_ref"]]
             repairs.append("alias:evidence_ref->evidence_refs")
+        if "actual_value" in d and "observed_value" not in d:
+            d["observed_value"] = d["actual_value"]
+            repairs.append("alias:actual_value->observed_value")
+        if "threshold_value" in d and "threshold" not in d:
+            d["threshold"] = d["threshold_value"]
+            repairs.append("alias:threshold_value->threshold")
+        if "expected_value" in d and "threshold" not in d:
+            d["threshold"] = d["expected_value"]
+            repairs.append("alias:expected_value->threshold")
+        if "delta_value" in d and "delta" not in d:
+            d["delta"] = d["delta_value"]
+            repairs.append("alias:delta_value->delta")
 
         check_name = coerce_string(d.get("check_name", ""), max_len=120)
         if check_name.startswith("checks_warn_fail"):
@@ -342,6 +384,9 @@ def _normalize_captain_candidate(
             repairs.append("coerced:evidence_refs_to_list")
         evidence_refs = coerce_string_list(evidence_in, max_items=5, max_item_len=240)
         verification_steps = coerce_string_list(ver_in, max_items=3, max_item_len=500)
+        observed_value = _coerce_issue_scalar(d.get("observed_value"))
+        threshold_value = _coerce_issue_scalar(d.get("threshold"))
+        delta_value = _coerce_issue_scalar(d.get("delta"))
 
         if allowed_check_names and check_name and check_name not in allowed_check_names:
             if allow_novel_issues and _issue_has_grounded_evidence(
@@ -397,6 +442,9 @@ def _normalize_captain_candidate(
                 "hypotheses": coerce_string_list(hyp_in, max_items=2, max_item_len=200),
                 "verification_steps": verification_steps,
                 "evidence_refs": evidence_refs,
+                "observed_value": observed_value,
+                "threshold": threshold_value,
+                "delta": delta_value,
             }
         )
 
@@ -455,6 +503,7 @@ def _build_prompt(dq_report: dict[str, Any]) -> str:
             "verification_steps must follow allowed SQL/psql templates and use only allowed tables.",
             "Do not output mutation SQL (DROP/DELETE/TRUNCATE/UPDATE/INSERT).",
             "For novel::<slug> issues provide non-empty evidence_refs and SELECT/CTE verification only (no psql wrapper).",
+            "Each issue must include observed_value, threshold and delta (use null when unavailable).",
         ],
         "strict_json_schema": {
             "verdict": "PASS|WARN|FAIL",
@@ -466,6 +515,9 @@ def _build_prompt(dq_report: dict[str, Any]) -> str:
                     "hypotheses": ["max 2 strings"],
                     "verification_steps": ["max 3 SQL/psql strings"],
                     "evidence_refs": ["max 5 grounding refs"],
+                    "observed_value": "number|string|null",
+                    "threshold": "number|string|null",
+                    "delta": "number|string|null",
                 }
             ],
             "recommendations": ["max 5 strings"],
@@ -709,6 +761,9 @@ def _build_local_mock_result(dq_report: dict[str, Any]) -> dict[str, Any]:
                     f"SELECT * FROM step1.step1_orders WHERE run_id = '<run_id>' LIMIT 20; -- fallback for {check_name}",
                 ],
                 "evidence_refs": [f"artifact:data/dq_reports/<run_id>.json#/rows/{check_name}"],
+                "observed_value": row.get("actual_value"),
+                "threshold": row.get("expected_value", row.get("threshold_value")),
+                "delta": row.get("delta_value"),
             }
         )
     verdict = "PASS"

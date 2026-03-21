@@ -419,5 +419,21 @@
         "SELECT ... FROM step1.step1_customer_daily WHERE run_id = '<run_id>';"
       ]
     }
+  },
+  "experiment_variants": {
+    "ctrl": {
+      "mode_tag": "control",
+      "horizon_days": 7,
+      "seed": 0
+    },
+    "treatment": {
+      "mode_tag": "treatment",
+      "horizon_days": 7,
+      "seed": 0,
+      "overrides": {
+        "enable_competitor_prices": 1,
+        "perishable_remove_buffer_days": 2
+      }
+    }
   }
 }

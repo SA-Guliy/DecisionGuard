@@ -277,6 +277,40 @@ def _metric_expected_direction(metric_def: dict[str, Any]) -> str:
     return ""
 
 
+def _normalize_experiment_variants(raw: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for key in ("ctrl", "treatment"):
+        row = raw.get(key)
+        if not isinstance(row, dict):
+            continue
+        mode_tag = str(row.get("mode_tag", "")).strip()
+        horizon_days = row.get("horizon_days")
+        seed = row.get("seed")
+        if not mode_tag:
+            continue
+        try:
+            horizon_days_num = int(horizon_days)
+        except Exception:
+            continue
+        try:
+            seed_num = int(seed)
+        except Exception:
+            continue
+        if horizon_days_num <= 0:
+            continue
+        overrides_raw = row.get("overrides")
+        overrides = overrides_raw if isinstance(overrides_raw, dict) else {}
+        out[key] = {
+            "mode_tag": mode_tag,
+            "horizon_days": horizon_days_num,
+            "seed": seed_num,
+            "overrides": dict(overrides),
+        }
+    return out
+
+
 def _convert_contract_v2(payload: dict[str, Any]) -> dict[str, Any]:
     template_meta = payload.get("template_metadata") if isinstance(payload.get("template_metadata"), dict) else {}
     metrics_dictionary = payload.get("metrics_dictionary") if isinstance(payload.get("metrics_dictionary"), dict) else {}
@@ -451,6 +485,7 @@ def _convert_contract_v2(payload: dict[str, Any]) -> dict[str, Any]:
         "allowed_sql_tables": _as_list_of_str(captain_cfg.get("allowed_sql_tables")),
         "sql_step_templates": _as_list_of_str(captain_cfg.get("sql_step_templates")),
     }
+    experiment_variants = _normalize_experiment_variants(payload.get("experiment_variants"))
 
     return {
         "version": str(payload.get("contract_version", "domain_template.v2") or "domain_template.v2"),
@@ -473,6 +508,7 @@ def _convert_contract_v2(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "doctor": normalized_doctor,
         "captain": normalized_captain,
+        "experiment_variants": experiment_variants,
         "data_mapping_rules": payload.get("data_mapping_rules") if isinstance(payload.get("data_mapping_rules"), dict) else {},
         "evaluation_rules": eval_rules,
     }
@@ -510,6 +546,21 @@ def load_domain_template(path: str = "") -> dict[str, Any]:
 
 def domain_template_source(path: str = "") -> str:
     return str(resolve_domain_template_path(path))
+
+
+def load_experiment_variants(path: str = "") -> dict[str, dict[str, Any]] | None:
+    tpl = load_domain_template(path)
+    variants = tpl.get("experiment_variants")
+    if not isinstance(variants, dict):
+        return None
+    ctrl = variants.get("ctrl")
+    treatment = variants.get("treatment")
+    if not isinstance(ctrl, dict) or not isinstance(treatment, dict):
+        return None
+    return {
+        "ctrl": dict(ctrl),
+        "treatment": dict(treatment),
+    }
 
 
 def metric_goal(metric: str, template: dict[str, Any] | None = None) -> str:

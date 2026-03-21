@@ -25,6 +25,9 @@ _STOPWORDS = {
     "value",
 }
 
+_PRIMARY_SNAPSHOTS_DIR = Path("data/metrics_snapshots")
+_LOCKED_HISTORICAL_SNAPSHOTS_DIR = Path("not_delete_historical_patterns/metrics_snapshots")
+
 
 def _tokenize(text: str) -> set[str]:
     tokens: set[str] = set()
@@ -79,6 +82,22 @@ def _extract_sha256(path: Path) -> str:
     return sidecar.read_text(encoding="utf-8").strip().lower()
 
 
+def _candidate_snapshot_paths(run_id: str) -> list[Path]:
+    # Priority: active runtime snapshots first, then locked historical corpus.
+    selected_by_stem: dict[str, Path] = {}
+    for root in (_PRIMARY_SNAPSHOTS_DIR, _LOCKED_HISTORICAL_SNAPSHOTS_DIR):
+        if not root.exists():
+            continue
+        for candidate_path in sorted(root.glob("*.json")):
+            stem = candidate_path.stem.strip()
+            if not stem or stem == run_id:
+                continue
+            if stem in selected_by_stem:
+                continue
+            selected_by_stem[stem] = candidate_path
+    return [selected_by_stem[k] for k in sorted(selected_by_stem.keys())]
+
+
 def build_semantic_hybrid_pack(
     *,
     run_id: str,
@@ -90,7 +109,7 @@ def build_semantic_hybrid_pack(
     required_actions: list[str] = []
     error_code = "NONE"
 
-    current_path = Path(f"data/metrics_snapshots/{run_id}.json")
+    current_path = _PRIMARY_SNAPSHOTS_DIR / f"{run_id}.json"
     current = load_json_with_integrity(current_path)
     current_metrics = _numeric_metrics(current)
     current_tokens = _tokenize(_snapshot_text(current))
@@ -110,7 +129,7 @@ def build_semantic_hybrid_pack(
                 "retrieval_policy": {
                     "top_k": int(max(1, top_k)),
                     "min_overlap_metrics": 1,
-                    "source": "data/metrics_snapshots/*.json",
+                    "source": "data/metrics_snapshots/*.json;not_delete_historical_patterns/metrics_snapshots/*.json",
                 },
                 "rows": [],
                 "error_code": "HISTORICAL_CONTEXT_MISSING",
@@ -126,11 +145,8 @@ def build_semantic_hybrid_pack(
     fact_refs: list[str] = [_artifact_ref(current_path, "#/metrics")]
     evidence_hashes: list[dict[str, str]] = []
 
-    snapshots_dir = Path("data/metrics_snapshots")
-    for candidate_path in sorted(snapshots_dir.glob("*.json")):
+    for candidate_path in _candidate_snapshot_paths(run_id):
         candidate_run_id = candidate_path.stem.strip()
-        if not candidate_run_id or candidate_run_id == run_id:
-            continue
         try:
             candidate = load_json_with_integrity(candidate_path)
         except Exception:
@@ -236,7 +252,7 @@ def build_semantic_hybrid_pack(
         "retrieval_policy": {
             "top_k": int(max(1, top_k)),
             "min_overlap_metrics": 1,
-            "source": "data/metrics_snapshots/*.json",
+            "source": "data/metrics_snapshots/*.json;not_delete_historical_patterns/metrics_snapshots/*.json",
         },
         "rows": rows,
         "error_code": error_code if error_code != "NONE" else "NONE",

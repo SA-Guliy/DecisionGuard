@@ -13,7 +13,9 @@
   "required_fields": {
     "doctor": [
       "normalized_decision",
-      "assignment_status"
+      "assignment_status",
+      "layers_present",
+      "reasoning_confidence_inputs"
     ],
     "evaluator": [
       "decision",
@@ -25,7 +27,10 @@
       "normalized_decision",
       "blocked_by",
       "inputs_summary",
-      "doctor_hypothesis_review"
+      "doctor_hypothesis_review",
+      "guardrail_status_check",
+      "reasoning_confidence",
+      "reasoning_confidence_basis"
     ]
   },
   "forbidden_decisions_when": [

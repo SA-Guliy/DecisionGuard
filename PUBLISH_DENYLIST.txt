@@ -1,0 +1,24 @@
+# Internal strategy / private control files
+cursorrules
+AUDIT.md
+REPO_TREE.md
+Repo_Tree._Details.md
+
+# Quarantine and archive zones
+_PROJECT_TRASH/**
+_ARCHIVE_TO_MOVE_OUT_*/**
+
+# Runtime artifacts outside demo SoT
+data/**
+reports/**
+human_reports/**
+
+# Security-sensitive map storage (never public)
+data/security/obfuscation_maps/**
+
+# Local / machine-specific traces
+**/.DS_Store
+**/*.log
+**/*.tmp
+**/__pycache__/**
+**/*.pyc

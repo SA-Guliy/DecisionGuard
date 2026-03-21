@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.model_policy import COMMANDER_GROQ_FALLBACK_MODEL, COMMANDER_GROQ_PRIMARY_MODEL
-from src.architecture_v3 import load_anti_goodhart_verdict, load_json_with_integrity
+from src.architecture_v3 import load_anti_goodhart_verdict, load_json_with_integrity, stat_evidence_bundle_path
 from src.decision_contract import load_decision_contract, validate_decision, validate_required_fields
 from src.domain_template import (
     ConfigurationError,
@@ -40,6 +40,7 @@ from src.status_taxonomy import (
     is_measurement_blocked,
 )
 from src.semantic_scoring import hypothesis_format_ok
+from src.reasoning_confidence import compute_reasoning_confidence
 from src.visible_reasoning_trace import build_visible_reasoning_trace_advisory
 from src.security_utils import sha256_sidecar_path, write_sha256_sidecar
 
@@ -1247,6 +1248,9 @@ def _base_hold_payload(run_id: str, blocked_by: list[str]) -> dict[str, Any]:
         "data_requests": base_data_requests,
         "next_experiment": None,
         "next_actions": [{"type": "measurement_fix_plan", "steps": ["Restore missing inputs", "Re-run upstream artifacts", "Re-run commander"]}],
+        "guardrail_status_check": [],
+        "reasoning_confidence": 0.0,
+        "reasoning_confidence_basis": ["missing_inputs_hold_payload"],
         "weekly_report_bullets": [
             "Decision for this cycle: HOLD.",
             "Commander received incomplete or invalid inputs.",
@@ -1281,6 +1285,8 @@ def _base_hold_payload(run_id: str, blocked_by: list[str]) -> dict[str, Any]:
             "refuted_count": 0,
             "untestable_count": 0,
             "refuted_high_count": 0,
+            "goal_alignment_status": "UNKNOWN",
+            "misaligned_hypothesis_count": 0,
             "verification_quality_score": 1.0,
         },
         "review_blockers": [],
@@ -1308,6 +1314,105 @@ def _clamp01(value: float) -> float:
 def _normalize_review_status(value: Any) -> str:
     status = str(value or "").strip().upper()
     return status if status in HYPOTHESIS_REVIEW_STATUSES else "UNTESTABLE"
+
+
+def _normalize_goal_alignment(value: Any) -> str:
+    norm = str(value or "").strip().lower()
+    if norm in {"aligned", "misaligned", "unknown"}:
+        return norm
+    return "unknown"
+
+
+def _ab_primary_goal_from_reports(ab: dict[str, Any] | None, ab_v2: dict[str, Any] | None) -> str:
+    primary_metric = ""
+    if isinstance(ab_v2, dict):
+        pm = ab_v2.get("primary_metric", {})
+        if isinstance(pm, dict):
+            primary_metric = str(pm.get("name", "")).strip()
+    if not primary_metric and isinstance(ab, dict):
+        summary = ab.get("summary", {})
+        if isinstance(summary, dict):
+            primary_metric = str(summary.get("primary_metric", "")).strip()
+    try:
+        return goal_from_metric(primary_metric)
+    except Exception:
+        return "unknown"
+
+
+def _ab_primary_metric_from_reports(ab: dict[str, Any] | None, ab_v2: dict[str, Any] | None) -> str:
+    primary_metric = ""
+    if isinstance(ab_v2, dict):
+        pm = ab_v2.get("primary_metric", {})
+        if isinstance(pm, dict):
+            primary_metric = str(pm.get("name", "")).strip()
+    if not primary_metric and isinstance(ab, dict):
+        summary = ab.get("summary", {})
+        if isinstance(summary, dict):
+            primary_metric = str(summary.get("primary_metric", "")).strip()
+    return primary_metric
+
+
+def _extract_primary_p_value_from_stat_bundle(
+    stat_bundle: dict[str, Any],
+    *,
+    primary_metric: str,
+) -> float | None:
+    rows = stat_bundle.get("metrics", []) if isinstance(stat_bundle.get("metrics"), list) else []
+    target = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("metric_id", "")).strip() == str(primary_metric or "").strip():
+            target = row
+            break
+    if target is None and rows and isinstance(rows[0], dict):
+        target = rows[0]
+    if not isinstance(target, dict):
+        return None
+    try:
+        value = target.get("p_value")
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _best_similarity_from_historical_rows(rows: list[dict[str, Any]]) -> float | None:
+    best = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            score = float(row.get("similarity_score"))
+        except Exception:
+            continue
+        if best is None or score > best:
+            best = score
+    return best
+
+
+def _guardrail_data_complete(guardrail_status_check: list[dict[str, Any]]) -> bool:
+    if not guardrail_status_check:
+        return False
+    for row in guardrail_status_check:
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("status", "")).strip().upper() == "NO_DATA":
+            return False
+    return True
+
+
+def _goal_alignment_for_target(target_metric: str, *, ab_primary_goal: str) -> tuple[str, str | None]:
+    try:
+        target_goal = goal_from_metric(str(target_metric or "").strip())
+    except Exception:
+        target_goal = "unknown"
+    if not ab_primary_goal or ab_primary_goal == "unknown" or target_goal == "unknown":
+        return "unknown", None
+    if target_goal == ab_primary_goal:
+        return "aligned", None
+    return "misaligned", f"{target_goal}->{ab_primary_goal}"
 
 
 def _load_doctor_hypothesis_review_contract() -> dict[str, Any]:
@@ -1433,7 +1538,11 @@ def _has_guardrail_signal(hypothesis: dict[str, Any]) -> bool:
     return any(k in refs_blob for k in ("guardrail", "measurement", "srm", "availability", "margin"))
 
 
-def _build_hypothesis_review_summary(review_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_hypothesis_review_summary(
+    review_rows: list[dict[str, Any]],
+    *,
+    ab_primary_goal: str = "unknown",
+) -> dict[str, Any]:
     total = len(review_rows)
     supported = len([r for r in review_rows if _normalize_review_status(r.get("final_verdict")) == "SUPPORTED"])
     weak = len([r for r in review_rows if _normalize_review_status(r.get("final_verdict")) == "WEAK"])
@@ -1452,6 +1561,16 @@ def _build_hypothesis_review_summary(review_rows: list[dict[str, Any]]) -> dict[
     untestable_rate = untestable / denom
     weak_rate = weak / denom
     score = 1.0 - (0.7 * refuted_high_rate + 0.5 * untestable_rate + 0.2 * weak_rate)
+    misaligned_count = len([r for r in review_rows if _normalize_goal_alignment(r.get("goal_alignment")) == "misaligned"])
+    if ab_primary_goal in {"", "unknown"}:
+        observed = {_normalize_goal_alignment(r.get("goal_alignment")) for r in review_rows}
+        observed = {x for x in observed if x in {"aligned", "misaligned"}}
+        if observed:
+            alignment_status = "PASS" if misaligned_count == 0 else "WARN"
+        else:
+            alignment_status = "UNKNOWN"
+    else:
+        alignment_status = "PASS" if misaligned_count == 0 else "WARN"
     return {
         "total_count": total,
         "supported_count": supported,
@@ -1459,6 +1578,8 @@ def _build_hypothesis_review_summary(review_rows: list[dict[str, Any]]) -> dict[
         "refuted_count": refuted,
         "untestable_count": untestable,
         "refuted_high_count": refuted_high,
+        "goal_alignment_status": alignment_status,
+        "misaligned_hypothesis_count": misaligned_count,
         "refuted_high_rate": round(refuted_high_rate, 4),
         "untestable_rate": round(untestable_rate, 4),
         "weak_rate": round(weak_rate, 4),
@@ -1479,9 +1600,14 @@ def _verify_doctor_hypotheses(
     review_rows: list[dict[str, Any]] = []
     review_blockers: list[str] = []
 
+    ab_primary_goal = _ab_primary_goal_from_reports(ab, ab_v2)
     for idx, row in enumerate([x for x in portfolio if isinstance(x, dict)], start=1):
         hypothesis_id = str(row.get("hypothesis_id", "")).strip() or f"hypothesis_{idx:02d}"
         target_metric = str(row.get("target_metric", "")).strip()
+        goal_alignment, cross_goal_reference = _goal_alignment_for_target(
+            target_metric,
+            ab_primary_goal=ab_primary_goal,
+        )
         expected_range = str(row.get("expected_uplift_range", "")).strip()
         refs = _normalize_evidence_refs_for_review(row.get("evidence_refs"))
         sign_expected, expected_min_abs = _parse_expected_range_for_review(expected_range)
@@ -1533,6 +1659,8 @@ def _verify_doctor_hypotheses(
                 "impact_class": impact_class,
                 "deterministic_verdict": verdict,
                 "final_verdict": verdict,
+                "goal_alignment": goal_alignment,
+                "cross_goal_reference": cross_goal_reference,
                 "evidence_refs": refs,
                 "rationale": (
                     f"Deterministic review for {hypothesis_id}: {reason}."
@@ -1550,7 +1678,7 @@ def _verify_doctor_hypotheses(
             }
         )
 
-    summary = _build_hypothesis_review_summary(review_rows)
+    summary = _build_hypothesis_review_summary(review_rows, ab_primary_goal=ab_primary_goal)
     return review_rows, summary, sorted(set(review_blockers))[:20]
 
 
@@ -1658,6 +1786,29 @@ def _enforce_hypothesis_review_ceiling(payload: dict[str, Any], *, enforce: bool
         payload["top_reasons"] = payload["blocked_by"][:5]
 
 
+def _enforce_guardrail_rollout_veto(payload: dict[str, Any]) -> None:
+    checks = payload.get("guardrail_status_check", [])
+    if not isinstance(checks, list):
+        return
+    has_breach_block = any(
+        isinstance(row, dict)
+        and str(row.get("status", "")).strip().upper() == "BREACH"
+        and bool(row.get("blocks_rollout", False))
+        for row in checks
+    )
+    if not has_breach_block:
+        return
+    decision = str(payload.get("normalized_decision", payload.get("decision", ""))).strip().upper()
+    if decision not in AGGRESSIVE_DECISIONS:
+        return
+    payload["decision"] = "HOLD_NEED_DATA"
+    payload["normalized_decision"] = "HOLD_NEED_DATA"
+    blocked_by = payload.get("blocked_by", []) if isinstance(payload.get("blocked_by"), list) else []
+    blocked_by.append("guardrail_breach_rollout_blocked")
+    payload["blocked_by"] = sorted({str(x) for x in blocked_by if str(x).strip()})[:20]
+    payload["top_reasons"] = payload["blocked_by"][:5]
+
+
 def _validate_hypothesis_review_payload(payload: dict[str, Any]) -> None:
     try:
         contract = _load_doctor_hypothesis_review_contract()
@@ -1692,6 +1843,11 @@ def _validate_hypothesis_review_payload(payload: dict[str, Any]) -> None:
         if isinstance(row_props.get("final_verdict"), dict)
         else HYPOTHESIS_REVIEW_STATUSES
     )
+    goal_alignment_allowed = set(
+        row_props.get("goal_alignment", {}).get("enum", ["aligned", "misaligned", "unknown"])
+        if isinstance(row_props.get("goal_alignment"), dict)
+        else ["aligned", "misaligned", "unknown"]
+    )
     summary_schema = props.get("hypothesis_review_summary", {}) if isinstance(props.get("hypothesis_review_summary"), dict) else {}
     summary_required = summary_schema.get("required", []) if isinstance(summary_schema.get("required"), list) else []
 
@@ -1711,6 +1867,16 @@ def _validate_hypothesis_review_payload(payload: dict[str, Any]) -> None:
         final = _normalize_review_status(final_raw)
         if det == "REFUTED" and final == "SUPPORTED":
             raise ValueError("HYPOTHESIS_REVIEW_POLICY_VIOLATION:llm_upgraded_refuted_to_supported")
+        goal_alignment_raw = str(row.get("goal_alignment", "")).strip().lower()
+        if goal_alignment_raw not in goal_alignment_allowed:
+            raise ValueError(
+                f"HYPOTHESIS_REVIEW_INVALID_SCHEMA:invalid_goal_alignment:{idx}:{goal_alignment_raw or 'empty'}"
+            )
+        cross_goal_reference = row.get("cross_goal_reference")
+        if cross_goal_reference is not None and not isinstance(cross_goal_reference, str):
+            raise ValueError(f"HYPOTHESIS_REVIEW_INVALID_SCHEMA:invalid_cross_goal_reference:{idx}")
+        if goal_alignment_raw == "misaligned" and not str(cross_goal_reference or "").strip():
+            raise ValueError(f"HYPOTHESIS_REVIEW_INVALID_SCHEMA:missing_cross_goal_reference_for_misaligned:{idx}")
         refs = row.get("evidence_refs", [])
         if not isinstance(refs, list):
             raise ValueError(f"HYPOTHESIS_REVIEW_INVALID_SCHEMA:evidence_refs_not_list:{idx}")
@@ -1971,6 +2137,19 @@ def _validate_commander_policy_contract(payload: dict[str, Any]) -> None:
     methodology = payload.get("methodology_check", {})
     if not isinstance(methodology, dict):
         raise ValueError("commander contract: methodology_check missing")
+    guardrail_checks = payload.get("guardrail_status_check", [])
+    if not isinstance(guardrail_checks, list):
+        raise ValueError("commander contract: guardrail_status_check missing")
+    confidence_score = payload.get("reasoning_confidence")
+    try:
+        confidence_num = float(confidence_score)
+    except Exception:
+        raise ValueError("commander contract: reasoning_confidence invalid")
+    if confidence_num < 0.0 or confidence_num > 1.0:
+        raise ValueError("commander contract: reasoning_confidence out_of_range")
+    confidence_basis = payload.get("reasoning_confidence_basis", [])
+    if not isinstance(confidence_basis, list):
+        raise ValueError("commander contract: reasoning_confidence_basis missing")
     ab_status = str(methodology.get("ab_status", "")).upper()
     measurement_state = str(methodology.get("measurement_state", "")).upper()
     decision = str(payload.get("normalized_decision", "")).upper()
@@ -1980,6 +2159,13 @@ def _validate_commander_policy_contract(payload: dict[str, Any]) -> None:
     review_summary = payload.get("hypothesis_review_summary", {}) if isinstance(payload.get("hypothesis_review_summary"), dict) else {}
     if int(review_summary.get("refuted_high_count", 0) or 0) > 0 and decision in {"RUN_AB", "ROLLOUT_CANDIDATE"}:
         raise ValueError("HYPOTHESIS_REVIEW_POLICY_VIOLATION:refuted_high_requires_hold_need_data")
+    if any(
+        isinstance(row, dict)
+        and str(row.get("status", "")).strip().upper() == "BREACH"
+        and bool(row.get("blocks_rollout", False))
+        for row in guardrail_checks
+    ) and decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}:
+        raise ValueError("METHODOLOGY_INVARIANT_BROKEN:guardrail_breach_blocks_aggressive_decision")
     if methodology.get("goal_metric_alignment_ok") is False and decision != "STOP":
         raise ValueError("commander contract: goal misalignment must force STOP")
     goals = payload.get("goals", [])
@@ -2410,6 +2596,27 @@ def main() -> None:
         except Exception as exc:
             historical_context_pack = {}
             historical_context_err = str(exc)
+        stat_bundle = {}
+        stat_bundle_err = ""
+        try:
+            stat_bundle = load_json_with_integrity(stat_evidence_bundle_path(run_id))
+            if not isinstance(stat_bundle, dict):
+                stat_bundle = {}
+                stat_bundle_err = "stat_bundle_not_object"
+        except Exception as exc:
+            stat_bundle = {}
+            stat_bundle_err = str(exc)
+        paired_context_path = Path(f"data/agent_context/{run_id}_paired_experiment_v2.json")
+        paired_context = {}
+        paired_status = "SINGLE"
+        try:
+            if paired_context_path.exists():
+                paired_context = load_json_with_integrity(paired_context_path)
+            if isinstance(paired_context, dict):
+                paired_status = str(paired_context.get("paired_status", "SINGLE")).strip().upper() or "SINGLE"
+        except Exception:
+            paired_context = {}
+            paired_status = "SINGLE"
         exp_id = str(args.experiment_id or "").strip()
         if not exp_id and isinstance(metrics, dict):
             run_cfg = metrics.get("run_config", {})
@@ -2421,6 +2628,11 @@ def main() -> None:
         blocked = [x for x in [dq_err, cap_err, met_err, doc_err, eval_err] if x]
         if historical_context_err:
             blocked.append(f"historical_context_missing_or_invalid:{historical_context_err}")
+        if paired_status == "COMPLETE":
+            if stat_bundle_err:
+                blocked.append(f"stat_evidence_bundle_missing_or_invalid:{stat_bundle_err}")
+            elif str(stat_bundle.get("status", "")).strip().upper() != "PASS":
+                blocked.append("stat_evidence_bundle_not_pass")
         if exp_id and ab_err:
             blocked.append(ab_err)
 
@@ -2434,6 +2646,17 @@ def main() -> None:
             and str(historical_context_pack.get("status", "")).upper() == "PASS"
             and len(hist_rows) > 0
         )
+        guardrail_status_check = (
+            stat_bundle.get("guardrail_status_check", [])
+            if isinstance(stat_bundle, dict) and isinstance(stat_bundle.get("guardrail_status_check"), list)
+            else []
+        )
+        stat_layers_present = (
+            stat_bundle.get("layers_present", {})
+            if isinstance(stat_bundle, dict) and isinstance(stat_bundle.get("layers_present"), dict)
+            else {}
+        )
+        stat_bundle_status = str(stat_bundle.get("status", "")).strip().upper() if isinstance(stat_bundle, dict) else ""
         doctor_hypothesis_review: list[dict[str, Any]] = []
         hypothesis_review_summary: dict[str, Any] = _build_hypothesis_review_summary([])
         review_blockers: list[str] = []
@@ -2456,13 +2679,18 @@ def main() -> None:
                 backend_name=args.backend,
             )
             hypothesis_review_summary = _build_hypothesis_review_summary(doctor_hypothesis_review)
-        if dq is None or captain is None or metrics is None or doctor is None or evaluator is None or not hist_ready:
+        paired_requires_stat = paired_status == "COMPLETE"
+        stat_ready = (not paired_requires_stat) or (stat_bundle_status == "PASS" and len(guardrail_status_check) > 0)
+        if dq is None or captain is None or metrics is None or doctor is None or evaluator is None or not hist_ready or not stat_ready:
             payload = _base_hold_payload(run_id, blocked)
             payload["hypothesis_review_mode"] = hypothesis_review_mode
             payload["doctor_hypothesis_review"] = doctor_hypothesis_review
             payload["hypothesis_review_summary"] = hypothesis_review_summary
             payload["review_blockers"] = review_blockers
             payload["hypothesis_review_llm_provenance"] = hypothesis_review_llm_provenance
+            payload["guardrail_status_check"] = guardrail_status_check
+            payload["reasoning_confidence"] = 0.0
+            payload["reasoning_confidence_basis"] = ["insufficient_inputs_for_reasoning_confidence"]
         else:
             dq_rows = dq.get("rows", [])
             if not isinstance(dq_rows, list):
@@ -2625,6 +2853,57 @@ def main() -> None:
                 methodology_check=methodology_check,
                 cohort_blocked=(cohort_analysis["status"] == "BLOCKED_BY_DATA"),
             )
+            guardrail_breach_blocks = any(
+                isinstance(row, dict)
+                and str(row.get("status", "")).strip().upper() == "BREACH"
+                and bool(row.get("blocks_rollout", False))
+                for row in guardrail_status_check
+            )
+            if guardrail_breach_blocks and mapped_decision in {"RUN_AB", "ROLLOUT_CANDIDATE", "GO"}:
+                mapped_decision = "HOLD_NEED_DATA"
+                pre_blocked.append("guardrail_breach_rollout_blocked")
+            primary_metric_for_conf = _ab_primary_metric_from_reports(
+                ab if isinstance(ab, dict) else None,
+                ab_v2 if isinstance(ab_v2, dict) else None,
+            )
+            p_value_for_conf = _extract_primary_p_value_from_stat_bundle(
+                stat_bundle if isinstance(stat_bundle, dict) else {},
+                primary_metric=primary_metric_for_conf,
+            )
+            best_similarity = _best_similarity_from_historical_rows(hist_rows)
+            guardrail_complete = _guardrail_data_complete(guardrail_status_check)
+            sample_sizes_for_conf = methodology_check.get("sample_sizes", {}) if isinstance(methodology_check.get("sample_sizes"), dict) else {}
+            n_min_observed = min(
+                int(float(sample_sizes_for_conf.get("control", 0) or 0)),
+                int(float(sample_sizes_for_conf.get("treatment", 0) or 0)),
+            )
+            if n_min_observed <= 0:
+                n_min_observed = int(stat_bundle.get("n_min_required", 0) or 0) if isinstance(stat_bundle, dict) else 0
+            srm_pass = not bool(stat_bundle.get("srm_flag", False)) if isinstance(stat_bundle, dict) else False
+            has_live_evidence = bool(stat_layers_present.get("layer1_live_stats", False)) and bool(
+                stat_layers_present.get("layer2_guardrail_check", False)
+            )
+            reasoning_confidence, reasoning_confidence_basis = compute_reasoning_confidence(
+                stat_layers_present if isinstance(stat_layers_present, dict) else {},
+                p_value_for_conf,
+                best_similarity,
+                guardrail_complete,
+                n_min_observed,
+                srm_pass,
+                mode=("paired" if paired_status != "SINGLE" else "single"),
+                paired_status=paired_status,
+                has_live_evidence=has_live_evidence,
+            )
+            reasoning_confidence_inputs = {
+                "layers_present": stat_layers_present,
+                "p_value": p_value_for_conf,
+                "best_analog_similarity": best_similarity,
+                "guardrail_data_complete": guardrail_complete,
+                "n_min": n_min_observed,
+                "srm_pass": srm_pass,
+                "paired_status": paired_status,
+                "stat_bundle_status": stat_bundle_status,
+            }
             payload = {
                 "run_id": run_id,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -2642,6 +2921,10 @@ def main() -> None:
                 "blocked_by": blocked_by,
                 "top_priorities": _top_priorities(mapped_decision, blocked_by, next_exp),
                 "next_experiment": next_exp,
+                "guardrail_status_check": guardrail_status_check,
+                "reasoning_confidence": reasoning_confidence,
+                "reasoning_confidence_basis": reasoning_confidence_basis,
+                "reasoning_confidence_inputs": reasoning_confidence_inputs,
                 "weekly_report_bullets": [],
                 "inputs_summary": {
                     "captain_verdict": captain_verdict if captain_verdict in {"PASS", "WARN", "FAIL"} else None,
@@ -2701,12 +2984,14 @@ def main() -> None:
                     "narrative_validation": f"reports/L1_ops/{run_id}/causal_claims_validation.json" if isinstance(narrative_validation, dict) else None,
                     "doctor_context": f"data/agent_context/{run_id}_doctor_context.json" if isinstance(doctor_context, dict) else None,
                     "historical_context_pack": f"artifact:{historical_context_pack_path}#",
+                    "stat_evidence_bundle": f"artifact:{stat_evidence_bundle_path(run_id)}#",
                     "cohort_evidence_pack": f"reports/L1_ops/{run_id}/cohort_evidence_pack.json",
                 },
             }
             _attach_commander_llm_reasoning(payload, args.backend)
             _apply_commander_llm_decision_merge(payload)
             _enforce_hypothesis_review_ceiling(payload, enforce=hypothesis_review_enforce)
+            _enforce_guardrail_rollout_veto(payload)
             payload["weekly_report_bullets"] = _llm_bullets(payload, args.backend)
             # Decision-cap next actions refinement.
             if payload["normalized_decision"] == "HOLD_NEED_DATA":
@@ -2750,6 +3035,7 @@ def main() -> None:
             _attach_commander_llm_reasoning(payload, args.backend)
             _apply_commander_llm_decision_merge(payload)
         _enforce_hypothesis_review_ceiling(payload, enforce=hypothesis_review_enforce)
+        _enforce_guardrail_rollout_veto(payload)
         payload["domain_template_path"] = domain_template_source()
         _attach_phase_flags_and_visible_trace(payload)
         llm_decision_prov = (

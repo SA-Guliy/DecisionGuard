@@ -32,6 +32,8 @@
           "impact_class",
           "deterministic_verdict",
           "final_verdict",
+          "goal_alignment",
+          "cross_goal_reference",
           "evidence_refs",
           "rationale",
           "mitigation"
@@ -69,6 +71,15 @@
               "WEAK",
               "REFUTED",
               "UNTESTABLE"
+            ]
+          },
+          "goal_alignment": {
+            "type": "string"
+          },
+          "cross_goal_reference": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "evidence_refs": {
@@ -111,6 +122,8 @@
         "refuted_count",
         "untestable_count",
         "refuted_high_count",
+        "goal_alignment_status",
+        "misaligned_hypothesis_count",
         "verification_quality_score"
       ],
       "properties": {
@@ -135,6 +148,13 @@
           "minimum": 0
         },
         "refuted_high_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "goal_alignment_status": {
+          "type": "string"
+        },
+        "misaligned_hypothesis_count": {
           "type": "integer",
           "minimum": 0
         },

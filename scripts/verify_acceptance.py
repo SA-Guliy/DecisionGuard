@@ -20,10 +20,14 @@ if str(ROOT) not in sys.path:
 from src.security_profile import load_security_profile
 from src.architecture_v3 import (
     REQUIRED_GATE_ORDER,
+    PAIRED_CTRL_FOUNDATION_ALLOWED_STEPS,
+    PAIRED_STATUS_LIFECYCLE_ALLOWED,
+    PAIRED_STATUS_ENUM,
     SANITIZATION_POLICY_PATH,
     SANITIZATION_TRANSFORM_PATH,
     RECONCILIATION_POLICY_PATH,
     anti_goodhart_verdict_path,
+    ctrl_foundation_audit_path,
     context_frame_path,
     decision_outcomes_ledger_path,
     governance_ceiling_path,
@@ -34,14 +38,17 @@ from src.architecture_v3 import (
     load_gate_result,
     load_json_with_integrity,
     offline_kpi_backtest_path,
+    paired_experiment_context_path,
     quality_invariants_path,
     reasoning_memory_ledger_path,
     reasoning_policy_path,
+    stat_evidence_bundle_path,
     validate_v3_contract_set,
 )
 from src.runtime_controls import load_feature_state_contract, load_runtime_limits_contract
 from src.security_utils import verify_json_manifest, verify_manifest_scope, verify_sha256_sidecar
 from src.sanitization_transform import verify_encrypted_map_document
+from src.paired_registry import is_partial_like, load_registry_for_run
 
 REDACTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"gsk_[A-Za-z0-9_\-]+"), "[REDACTED]"),
@@ -123,6 +130,7 @@ def _validate_doctor_hypothesis_review_structure(commander_doc: dict[str, Any]) 
 
     allowed = {"SUPPORTED", "WEAK", "REFUTED", "UNTESTABLE"}
     refuted_high = 0
+    misaligned = 0
     counts = {"SUPPORTED": 0, "WEAK": 0, "REFUTED": 0, "UNTESTABLE": 0}
     for idx, row in enumerate(rows):
         if not isinstance(row, dict):
@@ -138,6 +146,15 @@ def _validate_doctor_hypothesis_review_structure(commander_doc: dict[str, Any]) 
             issues.append(f"invalid_final_verdict:{idx}")
         if det == "REFUTED" and final == "SUPPORTED":
             issues.append(f"forbidden_upgrade_refuted_to_supported:{idx}")
+        goal_alignment = str(row.get("goal_alignment", "")).strip().lower()
+        if goal_alignment not in {"aligned", "misaligned", "unknown"}:
+            issues.append(f"invalid_goal_alignment:{idx}")
+        else:
+            if goal_alignment == "misaligned":
+                misaligned += 1
+        cross_goal_reference = row.get("cross_goal_reference")
+        if cross_goal_reference is not None and not isinstance(cross_goal_reference, str):
+            issues.append(f"invalid_cross_goal_reference:{idx}")
         refs = row.get("evidence_refs")
         if not isinstance(refs, list):
             issues.append(f"invalid_evidence_refs:{idx}")
@@ -166,6 +183,17 @@ def _validate_doctor_hypothesis_review_structure(commander_doc: dict[str, Any]) 
     untestable_count = int(untestable_raw) if untestable_raw is not None else -1
     if untestable_count != counts["UNTESTABLE"]:
         issues.append("summary_untestable_mismatch")
+    misaligned_raw = summary.get("misaligned_hypothesis_count", -1)
+    misaligned_count = int(misaligned_raw) if misaligned_raw is not None else -1
+    if misaligned_count != misaligned:
+        issues.append("summary_misaligned_count_mismatch")
+    alignment_status = str(summary.get("goal_alignment_status", "")).strip().upper()
+    if alignment_status not in {"PASS", "WARN", "UNKNOWN"}:
+        issues.append("goal_alignment_status_invalid")
+    else:
+        expected_alignment = "UNKNOWN" if alignment_status == "UNKNOWN" else ("PASS" if misaligned == 0 else "WARN")
+        if alignment_status != expected_alignment:
+            issues.append("goal_alignment_status_mismatch")
     score = summary.get("verification_quality_score")
     try:
         score_f = float(score)
@@ -184,9 +212,42 @@ def _validate_doctor_hypothesis_review_structure(commander_doc: dict[str, Any]) 
         "issues": issues,
         "missing": False,
         "refuted_high_count": refuted_high,
+        "misaligned_hypothesis_count": misaligned,
         "row_count": len(rows),
         "reviewed_ids": sorted(reviewed_ids),
     }
+
+
+def _validate_paired_status_lifecycle(
+    *,
+    paired_status: str,
+    status_history: Any,
+) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    allowed_lifecycle = set(PAIRED_STATUS_LIFECYCLE_ALLOWED)
+    status_norm = str(paired_status or "").strip().upper()
+    history = status_history if isinstance(status_history, list) else []
+    if not isinstance(status_history, list):
+        issues.append("status_history_not_array")
+    prev_to: str | None = None
+    for idx, row in enumerate(history):
+        if not isinstance(row, dict):
+            issues.append(f"status_history_row_not_object:{idx}")
+            continue
+        from_s = str(row.get("from", "")).strip().upper()
+        to_s = str(row.get("to", "")).strip().upper()
+        if (from_s, to_s) not in allowed_lifecycle:
+            issues.append(f"invalid_transition:{from_s}->{to_s}")
+        if idx > 0 and prev_to is not None and from_s != prev_to:
+            issues.append(f"transition_chain_break:{idx}:{from_s}!={prev_to}")
+        prev_to = to_s
+    if status_norm in {"PARTIAL", "TREATMENT_FAILED", "CTRL_FAILED"} and len(history) == 0:
+        issues.append("non_complete_status_requires_history")
+    if len(history) > 0:
+        tail_to = str((history[-1] or {}).get("to", "")).strip().upper() if isinstance(history[-1], dict) else ""
+        if tail_to != status_norm:
+            issues.append("history_tail_mismatch_current_status")
+    return (len(issues) == 0, issues)
 
 
 def _f(v: Any) -> float | None:
@@ -230,6 +291,7 @@ BATCH_TRANSPORT_POLICY_PATH = Path("configs/contracts/batch_record_transport_pol
 BATCH_RECORD_CONTRACT_PATH = Path("configs/contracts/batch_record_v2.json")
 CLEANUP_MANIFEST_CONTRACT_PATH = Path("configs/contracts/cleanup_manifest_v1.json")
 CONSOLIDATED_REPORT_CONTRACT_PATH = Path("configs/contracts/consolidated_report_v1.json")
+EXPERIMENT_DURATION_POLICY_PATH = Path("configs/contracts/experiment_duration_policy_v1.json")
 
 
 def _runtime_ddl_scan_targets() -> list[Path]:
@@ -602,6 +664,9 @@ def main() -> None:
     batch_record_contract, batch_record_contract_err = _load_contract_with_integrity(BATCH_RECORD_CONTRACT_PATH)
     cleanup_manifest_contract, cleanup_manifest_contract_err = _load_contract_with_integrity(CLEANUP_MANIFEST_CONTRACT_PATH)
     consolidated_report_contract, consolidated_report_contract_err = _load_contract_with_integrity(CONSOLIDATED_REPORT_CONTRACT_PATH)
+    experiment_duration_contract, experiment_duration_contract_err = _load_contract_with_integrity(
+        EXPERIMENT_DURATION_POLICY_PATH
+    )
     checks["artifact_spam_prevention_contract_loaded"] = _check(
         "PASS" if not artifact_spam_contract_err else "FAIL",
         "artifact_spam_prevention_contract_invalid" if artifact_spam_contract_err else "artifact_spam_prevention_contract_loaded",
@@ -651,6 +716,17 @@ def main() -> None:
         "consolidated_report_contract_invalid" if consolidated_report_contract_err else "consolidated_report_contract_loaded",
         str(CONSOLIDATED_REPORT_CONTRACT_PATH),
         consolidated_report_contract if isinstance(consolidated_report_contract, dict) else {"error": consolidated_report_contract_err},
+        "CRITICAL",
+    )
+    checks["experiment_duration_policy_contract_loaded"] = _check(
+        "PASS" if not experiment_duration_contract_err else "FAIL",
+        "experiment_duration_policy_contract_invalid"
+        if experiment_duration_contract_err
+        else "experiment_duration_policy_contract_loaded",
+        str(EXPERIMENT_DURATION_POLICY_PATH),
+        experiment_duration_contract
+        if isinstance(experiment_duration_contract, dict)
+        else {"error": experiment_duration_contract_err},
         "CRITICAL",
     )
 
@@ -891,6 +967,19 @@ def main() -> None:
         captain_gate if isinstance(captain_gate, dict) else {"error": "missing_captain_gate_result"},
         "CRITICAL",
     )
+    duration_gate_payload = gate_payloads.get("experiment_duration_gate", {})
+    duration_gate_details = duration_gate_payload.get("details", {}) if isinstance(duration_gate_payload, dict) else {}
+    duration_days_covered = _to_int(duration_gate_details.get("days_covered"))
+    duration_min_days = (
+        _to_int(duration_gate_details.get("min_experiment_days"))
+        or _to_int((experiment_duration_contract or {}).get("min_experiment_days"))
+        or 14
+    )
+    duration_gate_status = (
+        str(duration_gate_payload.get("status", "")).upper()
+        if isinstance(duration_gate_payload, dict)
+        else ""
+    )
     gate_order_violations: list[str] = []
     gate_ts_order: list[tuple[str, datetime]] = []
     for gate_name in required_primary_gate_order:
@@ -1009,6 +1098,225 @@ def main() -> None:
         "CRITICAL",
     )
 
+    paired_registry = None
+    paired_registry_err = ""
+    try:
+        paired_registry = load_registry_for_run(run_id, required=False)
+    except Exception as exc:
+        paired_registry_err = str(exc)
+    paired_mode = isinstance(paired_registry, dict) and str(paired_registry.get("mode", "")).strip().lower() == "paired"
+    paired_status_raw = (
+        str((paired_registry or {}).get("paired_status", "")).strip().upper()
+        if isinstance(paired_registry, dict)
+        else ""
+    )
+    paired_status_enum_ok = (not paired_mode) or paired_status_raw in set(PAIRED_STATUS_ENUM)
+    checks["paired_status_enum_canonical"] = _check(
+        "PASS" if paired_status_enum_ok else "FAIL",
+        "PAIRED_REGISTRY_KEY_INVALID",
+        "data/paired_registry/*__<run_id>.json",
+        {
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "allowed": list(PAIRED_STATUS_ENUM),
+            "error": paired_registry_err,
+        },
+        "CRITICAL",
+    )
+
+    registry_required = {
+        "experiment_id",
+        "parent_run_id",
+        "ctrl_run_id",
+        "treatment_run_id",
+        "paired_status",
+        "created_at",
+        "updated_at",
+        "error_code",
+        "reason",
+        "audit_ref",
+    }
+    registry_missing = [
+        key for key in sorted(registry_required) if not isinstance(paired_registry, dict) or key not in paired_registry
+    ]
+    paired_registry_ok = (not paired_mode and not paired_registry_err) or (
+        paired_mode
+        and not registry_missing
+        and str((paired_registry or {}).get("parent_run_id", "")).strip() == run_id
+        and str((paired_registry or {}).get("experiment_id", "")).strip() != ""
+    )
+    checks["paired_registry_contract_valid"] = _check(
+        "PASS" if paired_registry_ok else "FAIL",
+        "PAIRED_REGISTRY_KEY_INVALID",
+        "data/paired_registry/*__<run_id>.json",
+        {
+            "paired_mode": paired_mode,
+            "registry_missing": registry_missing,
+            "error": paired_registry_err,
+            "registry": paired_registry if isinstance(paired_registry, dict) else None,
+        },
+        "CRITICAL",
+    )
+
+    paired_context_payload = None
+    paired_context_err = ""
+    paired_context_path = paired_experiment_context_path(run_id)
+    if paired_mode and isinstance(paired_registry, dict):
+        paired_context_ref = str(paired_registry.get("paired_context_ref", "")).strip()
+        if paired_context_ref.startswith("artifact:"):
+            ref_path = paired_context_ref[len("artifact:") :].strip()
+            if ref_path:
+                paired_context_path = Path(ref_path)
+        try:
+            paired_context_payload = load_json_with_integrity(paired_context_path)
+        except Exception as exc:
+            paired_context_err = str(exc)
+    status_issues: list[str] = []
+    if paired_mode:
+        ctx_status = str((paired_context_payload or {}).get("paired_status", "")).strip().upper()
+        if ctx_status != paired_status_raw:
+            status_issues.append("paired_status_mismatch_between_registry_and_context")
+        if ctx_status == "COMPLETE":
+            if not isinstance((paired_context_payload or {}).get("layer1"), dict):
+                status_issues.append("complete_missing_layer1")
+            if not isinstance((paired_context_payload or {}).get("layer2"), dict):
+                status_issues.append("complete_missing_layer2")
+            if not str((paired_context_payload or {}).get("merger_artifact_ref", "")).strip():
+                status_issues.append("complete_missing_merger_artifact_ref")
+        elif ctx_status == "PARTIAL":
+            if not str((paired_context_payload or {}).get("partial_reason", "")).strip():
+                status_issues.append("partial_missing_reason")
+            if str((paired_context_payload or {}).get("decision_ceiling", "")).strip().upper() != "HOLD_NEED_DATA":
+                status_issues.append("partial_ceiling_not_hold_need_data")
+        elif ctx_status == "TREATMENT_FAILED":
+            if not str((paired_context_payload or {}).get("partial_reason", "")).strip():
+                status_issues.append("treatment_failed_missing_reason")
+            if not str((paired_context_payload or {}).get("failed_step", "")).strip():
+                status_issues.append("treatment_failed_missing_failed_step")
+            if str((paired_context_payload or {}).get("decision_ceiling", "")).strip().upper() != "HOLD_NEED_DATA":
+                status_issues.append("treatment_failed_ceiling_not_hold_need_data")
+        elif ctx_status == "CTRL_FAILED":
+            if not str((paired_context_payload or {}).get("failure_reason", "")).strip():
+                status_issues.append("ctrl_failed_missing_failure_reason")
+            if not str((paired_context_payload or {}).get("failed_step", "")).strip():
+                status_issues.append("ctrl_failed_missing_failed_step")
+            if "layer1" in (paired_context_payload or {}) or "layer2" in (paired_context_payload or {}):
+                status_issues.append("ctrl_failed_layer_fields_must_be_absent")
+        else:
+            status_issues.append("context_paired_status_invalid")
+    checks["paired_context_contract_valid"] = _check(
+        "PASS" if ((not paired_mode) or (isinstance(paired_context_payload, dict) and not status_issues)) else "FAIL",
+        "PAIRED_REGISTRY_KEY_INVALID",
+        str(paired_context_path),
+        {
+            "paired_mode": paired_mode,
+            "context_error": paired_context_err,
+            "status_issues": status_issues[:10],
+        },
+        "CRITICAL",
+    )
+    lifecycle_ok = True
+    lifecycle_issues: list[str] = []
+    if paired_mode and isinstance(paired_registry, dict):
+        lifecycle_ok, lifecycle_issues = _validate_paired_status_lifecycle(
+            paired_status=paired_status_raw,
+            status_history=paired_registry.get("status_history", []),
+        )
+    checks["paired_status_lifecycle_valid"] = _check(
+        "PASS" if ((not paired_mode) or lifecycle_ok) else "FAIL",
+        "PAIRED_REGISTRY_KEY_INVALID",
+        "data/paired_registry/*__<run_id>.json",
+        {
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "lifecycle_issues": lifecycle_issues[:10],
+            "allowed_transitions": list(PAIRED_STATUS_LIFECYCLE_ALLOWED),
+        },
+        "CRITICAL",
+    )
+
+    ctrl_scope_ok = True
+    ctrl_scope_error = ""
+    ctrl_scope_path = ctrl_foundation_audit_path(str((paired_registry or {}).get("ctrl_run_id", run_id)))
+    if paired_mode and isinstance(paired_registry, dict):
+        audit_ref = str(paired_registry.get("audit_ref", "")).strip()
+        if audit_ref.startswith("artifact:"):
+            audit_ref_path = audit_ref[len("artifact:") :].strip()
+            if audit_ref_path:
+                ctrl_scope_path = Path(audit_ref_path)
+        try:
+            ctrl_scope_payload = load_json_with_integrity(ctrl_scope_path)
+            executed_steps = (
+                ctrl_scope_payload.get("executed_steps", [])
+                if isinstance(ctrl_scope_payload, dict) and isinstance(ctrl_scope_payload.get("executed_steps"), list)
+                else []
+            )
+            allowed_set = set(PAIRED_CTRL_FOUNDATION_ALLOWED_STEPS)
+            if any(str(step) not in allowed_set for step in executed_steps):
+                ctrl_scope_ok = False
+                ctrl_scope_error = "executed_step_outside_allowlist"
+            if str((ctrl_scope_payload or {}).get("status", "")).upper() != "PASS":
+                ctrl_scope_ok = False
+                ctrl_scope_error = "ctrl_foundation_audit_not_pass"
+        except Exception as exc:
+            ctrl_scope_ok = False
+            ctrl_scope_error = str(exc)
+    checks["ctrl_foundation_scope_guard"] = _check(
+        "PASS" if ((not paired_mode) or ctrl_scope_ok) else "FAIL",
+        "CTRL_FOUNDATION_SCOPE_VIOLATION",
+        str(ctrl_scope_path),
+        {
+            "paired_mode": paired_mode,
+            "error": ctrl_scope_error,
+            "allowed_steps": list(PAIRED_CTRL_FOUNDATION_ALLOWED_STEPS),
+        },
+        "CRITICAL",
+    )
+    checks["single_mode_no_paired_artifact_dependency"] = _check(
+        "PASS" if (not paired_mode) else "NA",
+        "single_mode_independent",
+        "data/paired_registry/*",
+        {"paired_mode": paired_mode},
+        "CRITICAL",
+    )
+    stat_bundle_required = paired_mode and paired_status_raw == "COMPLETE"
+    stat_bundle_payload: dict[str, Any] | None = None
+    stat_bundle_err = ""
+    stat_bundle_layers: dict[str, Any] = {}
+    if stat_bundle_required:
+        try:
+            stat_bundle_payload = load_json_with_integrity(stat_evidence_bundle_path(run_id))
+            stat_bundle_layers = (
+                stat_bundle_payload.get("layers_present", {})
+                if isinstance(stat_bundle_payload.get("layers_present"), dict)
+                else {}
+            )
+        except Exception as exc:
+            stat_bundle_err = str(exc)
+    stat_bundle_present_ok = (
+        not stat_bundle_required
+        or (
+            isinstance(stat_bundle_payload, dict)
+            and isinstance(stat_bundle_payload.get("guardrail_status_check"), list)
+            and isinstance(stat_bundle_layers, dict)
+            and bool(stat_bundle_layers)
+        )
+    )
+    checks["stat_evidence_present_when_paired_complete"] = _check(
+        "PASS" if stat_bundle_present_ok else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(stat_evidence_bundle_path(run_id)),
+        {
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "required": stat_bundle_required,
+            "bundle_status": (stat_bundle_payload or {}).get("status") if isinstance(stat_bundle_payload, dict) else None,
+            "layers_present": stat_bundle_layers,
+            "error": stat_bundle_err,
+        },
+        "CRITICAL",
+    )
+
     anti_goodhart_verdict = None
     anti_goodhart_err = ""
     try:
@@ -1021,9 +1329,17 @@ def main() -> None:
         and str(anti_goodhart_verdict.get("source_of_truth", "")) == "anti_goodhart_verdict_v1"
         and isinstance(anti_goodhart_verdict.get("anti_goodhart_triggered"), bool)
     )
+    anti_goodhart_partial_expected = (
+        paired_mode
+        and is_partial_like(paired_status_raw)
+        and isinstance(anti_goodhart_verdict, dict)
+        and str(anti_goodhart_verdict.get("status", "")).upper() == "FAIL"
+        and str(anti_goodhart_verdict.get("error_code", "")).upper() == "AB_ARTIFACT_REQUIRED"
+    )
+    anti_goodhart_status_ok = anti_goodhart_status_ok or anti_goodhart_partial_expected
     checks["anti_goodhart_sot_integrity"] = _check(
         "PASS" if anti_goodhart_status_ok else "FAIL",
-        "ANTI_GOODHART_MISMATCH",
+        "AB_ARTIFACT_REQUIRED" if anti_goodhart_partial_expected else "ANTI_GOODHART_MISMATCH",
         str(anti_goodhart_verdict_path(run_id)),
         anti_goodhart_verdict if isinstance(anti_goodhart_verdict, dict) else {"error": anti_goodhart_err},
         "CRITICAL",
@@ -1039,12 +1355,15 @@ def main() -> None:
                 anti_goodhart_verdict.get("anti_goodhart_triggered", False)
             )
     checks["anti_goodhart_sot_consistency"] = _check(
-        "PASS" if not anti_goodhart_ab_v2_mismatch else "FAIL",
-        "ANTI_GOODHART_MISMATCH",
+        "PASS" if (anti_goodhart_partial_expected or not anti_goodhart_ab_v2_mismatch) else "FAIL",
+        "AB_ARTIFACT_REQUIRED" if anti_goodhart_partial_expected else "ANTI_GOODHART_MISMATCH",
         str(anti_goodhart_ab_v2_path) if anti_goodhart_ab_v2_path else "data/ab_reports/*_ab_v2.json",
         {
             "has_ab_v2": bool(anti_goodhart_ab_v2_path and anti_goodhart_ab_v2_path.exists()),
             "mismatch": anti_goodhart_ab_v2_mismatch,
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "partial_expected": anti_goodhart_partial_expected,
         },
         "CRITICAL",
     )
@@ -1515,6 +1834,223 @@ def main() -> None:
             "review_required": review_required,
             "commander_decision": commander_decision,
             "refuted_high_count": refuted_high_count,
+        },
+        "CRITICAL",
+    )
+    doctor_structured_required = paired_mode and paired_status_raw == "COMPLETE"
+    doctor_structured_issues: list[str] = []
+    required_doctor_slots = {
+        "layer1_verdict": str,
+        "layer2_guardrail_verdicts": list,
+        "alternative_hypotheses": list,
+        "temporal_risk": str,
+        "sensitivity_note": str,
+        "reasoning_confidence_inputs": dict,
+        "layers_present": dict,
+    }
+    if doctor_structured_required:
+        for slot_name, slot_type in required_doctor_slots.items():
+            slot_value = doctor.get(slot_name)
+            if not isinstance(slot_value, slot_type):
+                doctor_structured_issues.append(f"missing_or_invalid:{slot_name}")
+        if isinstance(doctor.get("layer1_verdict"), str) and not str(doctor.get("layer1_verdict", "")).strip():
+            doctor_structured_issues.append("empty:layer1_verdict")
+    checks["doctor_structured_reasoning_slots_present"] = _check(
+        "PASS" if (not doctor_structured_required or not doctor_structured_issues) else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(doctor_path),
+        {
+            "required": doctor_structured_required,
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "issues": doctor_structured_issues[:10],
+        },
+        "CRITICAL",
+    )
+    captain_issues = captain.get("issues", []) if isinstance(captain.get("issues"), list) else []
+    captain_issue_density_issues: list[str] = []
+    for idx, row in enumerate(captain_issues):
+        if not isinstance(row, dict):
+            captain_issue_density_issues.append(f"row_not_object:{idx}")
+            continue
+        for field_name in ("observed_value", "threshold", "delta"):
+            if field_name not in row:
+                captain_issue_density_issues.append(f"missing_field:{idx}:{field_name}")
+                continue
+            value = row.get(field_name)
+            if value is not None and not isinstance(value, (int, float, str)):
+                captain_issue_density_issues.append(f"invalid_scalar:{idx}:{field_name}")
+    checks["captain_issue_evidence_density_present"] = _check(
+        "PASS" if not captain_issue_density_issues else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(captain_path),
+        {
+            "issue_count": len(captain_issues),
+            "issues": captain_issue_density_issues[:12],
+        },
+        "CRITICAL",
+    )
+    commander_guardrail_required = paired_mode and paired_status_raw == "COMPLETE"
+    commander_guardrail_rows = (
+        commander.get("guardrail_status_check", [])
+        if isinstance(commander.get("guardrail_status_check"), list)
+        else []
+    )
+    commander_guardrail_issues: list[str] = []
+    if commander_guardrail_required:
+        if not commander_guardrail_rows:
+            commander_guardrail_issues.append("missing_guardrail_status_check")
+        for idx, row in enumerate(commander_guardrail_rows):
+            if not isinstance(row, dict):
+                commander_guardrail_issues.append(f"row_not_object:{idx}")
+                continue
+            if not str(row.get("metric_id", "")).strip():
+                commander_guardrail_issues.append(f"missing_metric_id:{idx}")
+            status = str(row.get("status", "")).strip().upper()
+            if status not in {"PASS", "BREACH", "NO_DATA"}:
+                commander_guardrail_issues.append(f"invalid_status:{idx}")
+            if not isinstance(row.get("blocks_rollout"), bool):
+                commander_guardrail_issues.append(f"missing_blocks_rollout_bool:{idx}")
+    checks["commander_guardrail_status_check_present"] = _check(
+        "PASS" if (not commander_guardrail_required or not commander_guardrail_issues) else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(commander_path),
+        {
+            "required": commander_guardrail_required,
+            "row_count": len(commander_guardrail_rows),
+            "issues": commander_guardrail_issues[:12],
+        },
+        "CRITICAL",
+    )
+    breach_blocks = any(
+        isinstance(row, dict)
+        and str(row.get("status", "")).strip().upper() == "BREACH"
+        and bool(row.get("blocks_rollout", False))
+        for row in commander_guardrail_rows
+    )
+    aggressive_decision = commander_decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}
+    checks["commander_guardrail_breach_blocks_aggressive_decision"] = _check(
+        "PASS" if (not commander_guardrail_required or not breach_blocks or not aggressive_decision) else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(commander_path),
+        {
+            "required": commander_guardrail_required,
+            "breach_blocks_rollout": breach_blocks,
+            "commander_decision": commander_decision,
+        },
+        "CRITICAL",
+    )
+    confidence_required = paired_mode and paired_status_raw == "COMPLETE"
+    confidence_score = commander.get("reasoning_confidence")
+    confidence_basis = commander.get("reasoning_confidence_basis")
+    confidence_inputs = commander.get("reasoning_confidence_inputs")
+    confidence_dynamic_ok = False
+    confidence_error = ""
+    if not confidence_required:
+        confidence_dynamic_ok = True
+    else:
+        try:
+            score_f = float(confidence_score)
+            if not (0.0 <= score_f <= 1.0):
+                raise ValueError("score_out_of_range")
+            if not isinstance(confidence_basis, list) or not confidence_basis:
+                raise ValueError("missing_basis")
+            if not isinstance(confidence_inputs, dict):
+                raise ValueError("missing_inputs")
+            has_dynamic_token = any(
+                isinstance(x, str)
+                and (
+                    x.startswith("penalty:")
+                    or x.startswith("bonus:")
+                    or x.startswith("cap:")
+                    or x.startswith("analog_similarity:")
+                    or x.startswith("no_bonus:")
+                )
+                for x in confidence_basis
+            )
+            if not has_dynamic_token:
+                raise ValueError("basis_not_dynamic")
+            for key in ("p_value", "best_analog_similarity", "guardrail_data_complete", "n_min", "srm_pass", "paired_status"):
+                if key not in confidence_inputs:
+                    raise ValueError(f"inputs_missing:{key}")
+            confidence_dynamic_ok = True
+        except Exception as exc:
+            confidence_error = str(exc)
+            confidence_dynamic_ok = False
+    checks["reasoning_confidence_dynamic_not_hardcoded"] = _check(
+        "PASS" if confidence_dynamic_ok else "FAIL",
+        "METHODOLOGY_INVARIANT_BROKEN",
+        str(commander_path),
+        {
+            "required": confidence_required,
+            "reasoning_confidence": confidence_score,
+            "reasoning_confidence_basis": confidence_basis if isinstance(confidence_basis, list) else [],
+            "confidence_inputs_keys": sorted(confidence_inputs.keys()) if isinstance(confidence_inputs, dict) else [],
+            "error": confidence_error,
+        },
+        "CRITICAL",
+    )
+    duration_aggressive_block = (
+        duration_days_covered is not None
+        and int(duration_days_covered) < int(duration_min_days)
+        and commander_decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}
+    )
+    checks["experiment_duration_decision_ceiling"] = _check(
+        "PASS" if not duration_aggressive_block else "FAIL",
+        "EXPERIMENT_DURATION_INSUFFICIENT",
+        "data/gates",
+        {
+            "commander_decision": commander_decision,
+            "duration_gate_status": duration_gate_status,
+            "days_covered": duration_days_covered,
+            "min_experiment_days": duration_min_days,
+        },
+        "CRITICAL",
+    )
+    partial_decision_violation = (
+        paired_mode
+        and is_partial_like(paired_status_raw)
+        and commander_decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}
+    )
+    checks["paired_partial_ceiling_enforced"] = _check(
+        "PASS" if not partial_decision_violation else "FAIL",
+        "PAIRED_PARTIAL_CEILING_VIOLATION",
+        str(commander_path),
+        {
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "commander_decision": commander_decision,
+            "paired_context_path": str(paired_context_path),
+        },
+        "CRITICAL",
+    )
+    partial_mode_active = paired_mode and is_partial_like(paired_status_raw)
+    anti_goodhart_fail_expected = (
+        isinstance(anti_goodhart_verdict, dict)
+        and str(anti_goodhart_verdict.get("status", "")).upper() == "FAIL"
+        and str(anti_goodhart_verdict.get("error_code", "")).upper() == "AB_ARTIFACT_REQUIRED"
+    )
+    anti_goodhart_pass_forced_ceiling = (
+        isinstance(anti_goodhart_verdict, dict)
+        and str(anti_goodhart_verdict.get("status", "")).upper() == "PASS"
+        and (
+            str((paired_context_payload or {}).get("decision_ceiling", "")).upper() == "HOLD_NEED_DATA"
+            or str((commander or {}).get("forced_decision_ceiling", "")).upper() == "HOLD_NEED_DATA"
+        )
+    )
+    checks["paired_partial_anti_goodhart_expected_outcome"] = _check(
+        "PASS"
+        if (not partial_mode_active or anti_goodhart_fail_expected or anti_goodhart_pass_forced_ceiling)
+        else "FAIL",
+        "PAIRED_PARTIAL_CEILING_VIOLATION",
+        str(anti_goodhart_verdict_path(run_id)),
+        {
+            "paired_mode": paired_mode,
+            "paired_status": paired_status_raw,
+            "anti_goodhart_status": (anti_goodhart_verdict or {}).get("status") if isinstance(anti_goodhart_verdict, dict) else None,
+            "anti_goodhart_error_code": (anti_goodhart_verdict or {}).get("error_code") if isinstance(anti_goodhart_verdict, dict) else None,
+            "forced_ceiling_context": (paired_context_payload or {}).get("decision_ceiling") if isinstance(paired_context_payload, dict) else None,
+            "forced_ceiling_commander": (commander or {}).get("forced_decision_ceiling") if isinstance(commander, dict) else None,
         },
         "CRITICAL",
     )
@@ -2399,6 +2935,24 @@ def main() -> None:
         },
         "CRITICAL",
     )
+    provisional_final_block = (
+        provisional_required
+        and commander_decision in {"GO", "RUN_AB", "ROLLOUT_CANDIDATE"}
+        and not (recon_job_ok and recon_result_ok)
+    )
+    checks["provisional_final_decision_blocked"] = _check(
+        "PASS" if not provisional_final_block else "FAIL",
+        "PROVISIONAL_REQUIRES_RECONCILIATION",
+        str(recon_result_path),
+        {
+            "provisional_required": provisional_required,
+            "commander_decision": commander_decision,
+            "reconciliation_job_ok": recon_job_ok,
+            "reconciliation_result_ok": recon_result_ok,
+            "issue": recon_issue,
+        },
+        "CRITICAL",
+    )
     weak_ceiling_expected = str(feature_state.get("default_weak_path_ceiling", "HOLD_NEED_DATA")).upper() or "HOLD_NEED_DATA"
     if weak_events:
         weak_ceiling_violations = [
@@ -2736,9 +3290,11 @@ def main() -> None:
         "| Check | Status | Severity | Evidence | Notes |",
         "|---|---|---|---|---|",
         row("doctor minimal schema", "schema_doctor_minimal"),
+        row("doctor structured reasoning slots", "doctor_structured_reasoning_slots_present"),
         row("hypothesis_portfolio >= 3", "doctor_portfolio_ge3"),
         row("unique_hypotheses >= 2", "doctor_unique_hyp_ge2"),
         row("portfolio_diversity >= 0.5", "doctor_diversity_ge05"),
+        row("captain issue evidence density", "captain_issue_evidence_density_present"),
         row("measurement_fix_plan for unobservable", "doctor_fix_plan_when_unobservable"),
         row(">=1 hypothesis tied to flagged metric", "doctor_tied_to_flagged_metric"),
         row("ReAct protocol checks passed", "react_protocol_checks_passed"),
@@ -2782,6 +3338,9 @@ def main() -> None:
         row("methodology mismatch blocked", "methodology_mismatch_blocked"),
         row("UNDERPOWERED handled", "underpowered_handled"),
         row("Goodhart detection active", "goodhart_detection_active"),
+        row("commander guardrail status check", "commander_guardrail_status_check_present"),
+        row("guardrail breach blocks aggressive decision", "commander_guardrail_breach_blocks_aggressive_decision"),
+        row("reasoning confidence dynamic", "reasoning_confidence_dynamic_not_hardcoded"),
         "",
         "## 5) Non-Triviality",
         "| Check | Status | Severity | Evidence | Notes |",
@@ -2823,6 +3382,15 @@ def main() -> None:
         row("historical retrieval gate", "historical_retrieval_gate"),
         row("reasoning memory ledger present", "reasoning_memory_ledger_present"),
         row("historical retrieval conformance gate", "historical_retrieval_conformance_gate"),
+        row("paired status enum canonical", "paired_status_enum_canonical"),
+        row("paired registry contract valid", "paired_registry_contract_valid"),
+        row("paired context contract valid", "paired_context_contract_valid"),
+        row("stat evidence present when paired COMPLETE", "stat_evidence_present_when_paired_complete"),
+        row("paired status lifecycle valid", "paired_status_lifecycle_valid"),
+        row("ctrl foundation scope guard", "ctrl_foundation_scope_guard"),
+        row("single mode independent from paired", "single_mode_no_paired_artifact_dependency"),
+        row("paired partial anti-goodhart policy", "paired_partial_anti_goodhart_expected_outcome"),
+        row("paired partial ceiling enforced", "paired_partial_ceiling_enforced"),
         row("anti-goodhart SoT integrity", "anti_goodhart_sot_integrity"),
         row("anti-goodhart SoT consistency", "anti_goodhart_sot_consistency"),
         row("quality invariants gate", "quality_invariants_gate"),

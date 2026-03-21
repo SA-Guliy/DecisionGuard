@@ -89,6 +89,7 @@ class BlueprintV21RuntimeEnforcementTests(unittest.TestCase):
             run_id="ut_v21_gate_order",
             backend="ollama",
             domain_template="",
+            experiment_id="exp1",
             enable_deepseek_doctor=0,
             enable_react_doctor=0,
             react_max_steps=1,
@@ -109,7 +110,7 @@ class BlueprintV21RuntimeEnforcementTests(unittest.TestCase):
             run_all_mod._REQUIRED_GATE_EXECUTION_LOG.clear()
             run_all_mod._run_core_agents_and_proof_steps(
                 args=args,
-                exp_id="",
+                exp_id="exp1",
                 log_file=Path("data/logs/ut_v21_gate_order.log"),
                 llm_env={},
                 retry_policy={"safe_decision": "HOLD_NEED_DATA"},
@@ -124,6 +125,7 @@ class BlueprintV21RuntimeEnforcementTests(unittest.TestCase):
                     "fail_closed_verify_acceptance": True,
                     "fail_closed_pre_publish_audit": True,
                 },
+                feature_state={"reconciliation_runtime": "IMPLEMENTED"},
             )
         self.assertEqual(
             run_all_mod._REQUIRED_GATE_EXECUTION_LOG,
@@ -189,6 +191,45 @@ class BlueprintV21RuntimeEnforcementTests(unittest.TestCase):
             run_all_mod._effective_hypothesis_review_flag(args_off, {"name": "production"}),
             0,
         )
+
+    def test_reconciliation_called_after_agent_value_eval_in_eval_tail(self) -> None:
+        args = argparse.Namespace(
+            run_id="ut_v21_reconciliation_order",
+            build_weekly=0,
+            build_exec=0,
+        )
+        events: list[str] = []
+
+        def _spy_py_step_specs(*, run_id, log_file, step_specs):  # noqa: ANN001
+            _ = (run_id, log_file)
+            names = [str(x.get("step_name", "")) for x in step_specs if isinstance(x, dict)]
+            if "run_agent_value_eval" in names:
+                events.append("run_agent_value_eval")
+            else:
+                events.append("py_step_specs")
+
+        with (
+            mock.patch.object(run_all_mod, "_run_py_step_specs", side_effect=_spy_py_step_specs),
+            mock.patch.object(run_all_mod, "_ensure_provisional_reconciliation_or_exit", side_effect=lambda **_: events.append("reconcile")),
+            mock.patch.object(run_all_mod, "_try_run_step", side_effect=lambda *a, **k: events.append(f"try:{a[1]}") if len(a) > 1 else True),
+            mock.patch.object(run_all_mod, "_run_gate_step", return_value=None),
+        ):
+            run_all_mod._run_eval_publish_tail(
+                args=args,
+                log_file=Path("data/logs/ut_v21_reconciliation_order.log"),
+                lightweight=True,
+                build_reports_cmd=["python3", "scripts/build_reports.py", "--run-id", args.run_id],
+                security_profile={
+                    "fail_closed_integrity_finalize": True,
+                    "fail_closed_verify_acceptance": True,
+                    "fail_closed_pre_publish_audit": True,
+                },
+                feature_state={"reconciliation_runtime": "IMPLEMENTED"},
+            )
+
+        self.assertIn("run_agent_value_eval", events)
+        self.assertIn("reconcile", events)
+        self.assertLess(events.index("run_agent_value_eval"), events.index("reconcile"))
 
     def test_commander_happy_path_without_ab_err(self) -> None:
         run_id = "ut_v21_commander_happy"

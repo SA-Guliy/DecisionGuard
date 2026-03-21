@@ -26,19 +26,9 @@ tmp/
 temp/
 
 # Runtime-generated artifacts
-data/logs/
-data/run_summaries/
-data/agent_reports/
-data/llm_reports/
-data/metrics_snapshots/
-data/batch_eval/
-data/cost/
-data/reconciliation/
-data/reports/
-data/agent_eval/
-data/runtime_guard/
-data/security/obfuscation_maps/
-data/agent_quality/
+data/*
+!data/poc
+!data/poc/**
 github_publish/
 
 # Local DB and dumps
@@ -63,33 +53,16 @@ private_prd/
 internal_strategy/
 internal_business_metrics/
 
-CLEANUP_RUNBOOK.md
-MIGRATION_MANIFEST.json
-MIGRATION_MANIFEST.md
-PUBLISH_AUDIT_CHECKLIST.md
-PUBLISH_EXPORT_MANIFEST.json
-PUBLISH_EXPORT_MANIFEST.json.sha256
-PUBLISH_EXPORT_MANIFEST.md
-rollback.sh
-PUBLISH_WHITELIST.txt
-PUBLISH_DENYLIST.txt
-PUBLISH_MANIFEST.md
-
-scripts/archive_step2_whitelist.py
-scripts/cleanup_step1_whitelist.py
-scripts/debug_groq_api.py
-scripts/archive_artifacts.py
-
-cursorrules
+# Internal eval and audit docs (per PUBLISH_DENYLIST)
+AGENT_EVAL_INTERNAL.md
 AUDIT.md
 REPO_TREE.md
 Repo_Tree._Details.md
-data/
+cursorrules
+
+# Runtime artifacts: production reports and human reports
 reports/
 human_reports/
-demo_sources/
-_PROJECT_TRASH/
-_ARCHIVE_TO_MOVE_OUT_*/
-PUBLISH_*
-MIGRATION_MANIFEST*
-rollback.sh
+
+# Legacy version archive
+v1/

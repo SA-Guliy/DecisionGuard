@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Callable
 
 from src.llm_secure_gateway import gateway_generate, get_llm_backend
@@ -36,6 +37,21 @@ DECOMMISSIONED_GROQ_MODELS: tuple[str, ...] = (
     "mixtral-8x7b-32768",
     "llama-3.1-70b-versatile",
 )
+
+_GROQ_KEY_RE = re.compile(r"\bgsk_[A-Za-z0-9_\-]{12,}\b")
+_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-]{10,}\b")
+
+
+def _sanitize_sensitive_text(text: str) -> str:
+    out = str(text or "")
+    out = _GROQ_KEY_RE.sub("gsk_[REDACTED]", out)
+    out = _BEARER_RE.sub("Bearer [REDACTED]", out)
+    return out
+
+
+def _safe_error_reason(exc: Exception | str, *, limit: int = 220) -> str:
+    first_line = str(exc).splitlines()[0] if str(exc) else ""
+    return _sanitize_sensitive_text(first_line)[:limit]
 
 
 def _clean_groq_model_ids(models: list[str] | tuple[str, ...]) -> list[str]:
@@ -145,14 +161,14 @@ def generate_with_runtime_failover(
             }
         except Exception as exc:
             if str(tier.backend_name or "").strip().lower() == "groq":
-                print(f"[DEBUG CLOUD ERROR] Model {tier.model_name or 'unknown'} failed: {repr(exc)}")
+                print(f"[DEBUG CLOUD ERROR] Model {tier.model_name or 'unknown'} failed: {_safe_error_reason(exc, limit=320)}")
             attempts.append(
                 {
                     "tier": tier.name,
                     "backend": tier.backend_name,
                     "model": tier.model_name,
                     "status": "FAIL",
-                    "reason": str(exc).splitlines()[0][:220],
+                    "reason": _safe_error_reason(exc),
                 }
             )
 

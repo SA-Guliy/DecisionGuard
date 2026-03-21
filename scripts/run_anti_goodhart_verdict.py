@@ -114,7 +114,7 @@ def main() -> None:
 
     if ab is None:
         status = "FAIL"
-        error_code = "ANTI_GOODHART_MISMATCH"
+        error_code = "AB_ARTIFACT_REQUIRED"
         blocked_by.append("missing_or_invalid_ab_artifact")
         required_actions.append("generate_ab_before_anti_goodhart_verdict")
     else:

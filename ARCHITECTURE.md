@@ -103,3 +103,58 @@ Optional runtime controls:
 - Transparent fallback semantics for business continuity.
 - Traceable governance through structured artifacts and integrity checks.
 - Explicit failure behavior preferred over silent degradation.
+
+---
+
+## Paired Experiment Mode
+
+Paired mode runs control and treatment branches under the same `experiment_id` and governs the full lifecycle from launch through decision.
+
+### Data Flow
+1. `--mode paired` triggers `_run_ctrl_foundation_only` — control simulation and metrics snapshot.
+2. Treatment pipeline runs against the same experiment context.
+3. On completion, `PairedExperimentContext` is written to `data/agent_context/<run_id>_paired_experiment_v2.json`.
+4. Doctor receives live `StatEvidenceBundle` (p-value, CI, effect size per metric) — enabling Layers 1+2 of reasoning.
+5. Commander enforces `guardrail_status_check[]` — any statistical breach blocks aggressive decisions.
+
+### Lifecycle States
+| Status | Meaning | Decision Ceiling |
+|--------|---------|-----------------|
+| `COMPLETE` | Both arms succeeded; all three reasoning layers active | No forced ceiling |
+| `PARTIAL` | Treatment failed after ctrl succeeded | Forced `HOLD_NEED_DATA` |
+| `TREATMENT_FAILED` | Treatment pipeline failed (preserved distinct from PARTIAL for audit) | Forced `HOLD_NEED_DATA` |
+| `CTRL_FAILED` | Control failed; treatment not attempted; no decision issued | Hard stop |
+
+### Fail-Closed Guarantees
+- Aggressive decisions (`GO/RUN_AB/ROLLOUT_CANDIDATE`) are blocked at runtime **and** re-checked at acceptance for any `partial-like` status.
+- Partial-like status cannot be written back to `COMPLETE` — no status regression.
+- Registry stored at `data/paired_registry/<exp_id>__<run_id>.json` with SHA256 sidecar and path-injection guard.
+
+---
+
+## Experiment Governance Gates
+
+Two mandatory gates enforce experiment hygiene before any agent reasoning begins.
+
+### Experiment Context Gate
+Every run requires `--experiment-id`. Without it, execution stops immediately with `EXPERIMENT_CONTEXT_REQUIRED` — there is no opt-out path in the orchestrator. Anonymous runs cannot produce governance artifacts.
+
+### 14-Day Duration Gate
+Aggressive final decisions are gated by a minimum 14-day coverage window for the same `experiment_id`. If coverage is below threshold, the decision ceiling is forced to `HOLD_NEED_DATA` regardless of what the LLM concludes. This prevents premature rollouts on underpowered observations.
+
+Both gates are enforced in order by the V3 contract set and are auditable in `data/gates/`.
+
+---
+
+## API Key Auto-Loading
+
+The runtime automatically loads `GROQ_API_KEY` from `~/.groq_secrets` at startup via `_inject_groq_key_if_needed()`.
+
+### Security guarantees
+- Key value is never printed, logged, or returned in any artifact.
+- `override=False` — an explicitly set environment variable always takes precedence over the file.
+- Key format is validated (`gsk_` prefix, minimum 20 characters) before being accepted.
+- File path is not disclosed in log messages.
+- Failure is non-fatal: agents fall through to deterministic fallback with an informational message.
+
+This means operators and automated agents can run the full cloud path without manual `export` steps or hardcoding keys in configuration files.

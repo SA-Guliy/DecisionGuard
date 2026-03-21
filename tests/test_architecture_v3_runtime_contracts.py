@@ -54,6 +54,7 @@ class ArchitectureV3RuntimeContractsTests(unittest.TestCase):
         self.assertIn("gate_result", payload)
         self.assertIn("decision_outcomes_ledger", payload)
         self.assertIn("offline_kpi_backtest", payload)
+        self.assertIn("experiment_duration_policy", payload)
 
     def test_reasoning_policy_fail_closed_on_full_fallback(self) -> None:
         run_id = "ut_v3_reasoning_policy"

@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stat_evidence_bundle_v1.json",
+  "title": "StatEvidenceBundleV1",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "generated_at",
+    "status",
+    "paired_status",
+    "layers_present",
+    "srm_flag",
+    "n_min_required",
+    "metrics",
+    "guardrail_status_check"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "stat_evidence_bundle_v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "paired_status": {
+      "type": "string",
+      "enum": [
+        "SINGLE",
+        "COMPLETE",
+        "PARTIAL",
+        "TREATMENT_FAILED",
+        "CTRL_FAILED"
+      ]
+    },
+    "layers_present": {
+      "type": "object",
+      "required": [
+        "layer1_live_stats",
+        "layer2_guardrail_check",
+        "layer3_history"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "layer1_live_stats": {
+          "type": "boolean"
+        },
+        "layer2_guardrail_check": {
+          "type": "boolean"
+        },
+        "layer3_history": {
+          "type": "boolean"
+        }
+      }
+    },
+    "srm_flag": {
+      "type": "boolean"
+    },
+    "n_min_required": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "metrics": {
+      "type": "array",
+      "maxItems": 80,
+      "items": {
+        "type": "object",
+        "required": [
+          "metric_id",
+          "metric_type",
+          "ctrl_value",
+          "trt_value",
+          "delta",
+          "n_ctrl",
+          "n_trt",
+          "method",
+          "verdict",
+          "is_guardrail_breach"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "metric_type": {
+            "type": "string",
+            "enum": [
+              "continuous",
+              "ratio_or_proportion",
+              "count_or_proportion",
+              "unknown"
+            ]
+          },
+          "ctrl_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "trt_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "delta": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "n_ctrl": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "n_trt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "welch_ttest_from_stats",
+              "aggregate_only",
+              "insufficient_data"
+            ]
+          },
+          "p_value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ci_lower": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ci_upper": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "power": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "POSITIVE_SIGNIFICANT",
+              "NEGATIVE_SIGNIFICANT",
+              "NO_SIGNIFICANT_EFFECT",
+              "UNDERPOWERED",
+              "NO_DATA",
+              "INCONCLUSIVE"
+            ]
+          },
+          "is_guardrail_breach": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 240
+          }
+        }
+      }
+    },
+    "guardrail_status_check": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": [
+          "metric_id",
+          "status",
+          "blocks_rollout",
+          "evidence_ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "BREACH",
+              "NO_DATA"
+            ]
+          },
+          "blocks_rollout": {
+            "type": "boolean"
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "blocked_by": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

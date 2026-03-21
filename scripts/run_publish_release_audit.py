@@ -8,11 +8,16 @@ import json
 import re
 import subprocess
 import ast
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.security_utils import verify_sha256_sidecar
 
 DEFAULT_SMOKE_TESTS = [
     "tests/test_commander_hypothesis_review_v1.py",
@@ -38,6 +43,8 @@ SECRET_PATTERNS = [
     ),
 ]
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+LOCKED_CORPUS_DIR = ROOT / "not_delete_historical_patterns/metrics_snapshots"
+LOCKED_CORPUS_MIN_JSON_SIDECAR_PAIRS = 2
 
 
 def _load_lines(path: Path) -> list[str]:
@@ -184,6 +191,56 @@ def _check_smoke_tests(enabled: bool) -> tuple[bool, str]:
     return rc == 0, tail
 
 
+def _check_historical_corpus_lock(
+    corpus_root: Path,
+    *,
+    denylist_globs: list[str],
+    min_pairs: int = LOCKED_CORPUS_MIN_JSON_SIDECAR_PAIRS,
+) -> tuple[bool, dict[str, Any]]:
+    try:
+        corpus_label = corpus_root.relative_to(ROOT).as_posix() if corpus_root.is_absolute() else str(corpus_root)
+    except Exception:
+        corpus_label = str(corpus_root)
+    details: dict[str, Any] = {
+        "corpus_root": corpus_label,
+        "min_pairs_required": int(min_pairs),
+        "pairs_found": 0,
+        "integrity_issues": [],
+        "denylist_hits": [],
+    }
+    if not corpus_root.exists() or not corpus_root.is_dir():
+        details["reason"] = "corpus_root_missing"
+        return False, details
+
+    pair_count = 0
+    integrity_issues: list[str] = []
+    for payload in sorted(corpus_root.glob("*.json")):
+        ok, reason = verify_sha256_sidecar(payload, required=True)
+        if not ok:
+            integrity_issues.append(f"{payload.relative_to(ROOT).as_posix()}:{reason}")
+            continue
+        pair_count += 1
+
+    details["pairs_found"] = int(pair_count)
+    details["integrity_issues"] = integrity_issues[:50]
+
+    corpus_rel_prefix = corpus_root.relative_to(ROOT).as_posix().rstrip("/")
+    deny_hits = [g for g in denylist_globs if _match_any(f"{corpus_rel_prefix}/sentinel.json", [g])]
+    details["denylist_hits"] = deny_hits[:20]
+
+    if deny_hits:
+        details["reason"] = "corpus_path_denied_by_publish_policy"
+        return False, details
+    if pair_count < int(min_pairs):
+        details["reason"] = "insufficient_json_sidecar_pairs"
+        return False, details
+    if integrity_issues:
+        details["reason"] = "corpus_integrity_failed"
+        return False, details
+    details["reason"] = "ok"
+    return True, details
+
+
 def _check_export_manifest(
     publish_root: Path,
     export_manifest_path: Path,
@@ -249,6 +306,7 @@ def _render_checklist(payload: dict[str, Any]) -> str:
     ]
     for key in [
         "publish_root_exists",
+        "historical_corpus_lock",
         "export_manifest_integrity",
         "whitelist_conformance",
         "denylist_conformance",
@@ -326,9 +384,15 @@ def main() -> None:
     markdown_hits = _check_markdown_links(payload_files, publish_root=publish_root) if publish_root_exists else []
     compile_ok, compile_tail = _check_py_compile(publish_root) if publish_root_exists else (False, "publish_root_missing")
     smoke_ok, smoke_tail = _check_smoke_tests(bool(int(args.run_smoke_tests)))
+    corpus_ok, corpus_meta = _check_historical_corpus_lock(
+        LOCKED_CORPUS_DIR,
+        denylist_globs=denylist_globs,
+        min_pairs=LOCKED_CORPUS_MIN_JSON_SIDECAR_PAIRS,
+    )
 
     checks = {
         "publish_root_exists": {"pass": publish_root_exists, "path": publish_root.as_posix()},
+        "historical_corpus_lock": {"pass": corpus_ok, "details": corpus_meta},
         "export_manifest_integrity": {"pass": manifest_ok, "issues": manifest_findings[:50]},
         "whitelist_conformance": {
             "pass": len(whitelist_violations) == 0 and len(payload_files) > 0,
