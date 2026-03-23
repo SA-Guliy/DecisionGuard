@@ -146,6 +146,46 @@ Both gates are enforced in order by the V3 contract set and are auditable in `da
 
 ---
 
+## Statistical Inference Layer
+
+Two deterministic components provide mathematical grounding for agent reasoning. Neither calls an LLM — they are pure computation that runs before agents receive context.
+
+### stat_engine (`src/stat_engine.py`)
+
+Computes a `StatEvidenceBundle` from paired control/treatment metric snapshots:
+
+| Metric type | Method | Why |
+|---|---|---|
+| Sample means (AOV, GMV, orders) | Welch's t-test (`ttest_ind_from_stats`, `equal_var=False`) | Real A/B data rarely has equal variance between arms |
+| Ratio metrics (gp_margin, fill_rate, oos_lost_gmv_rate) | Aggregate-only path, verdict `UNDERPOWERED` | Row-level variance is undefined for ratios computed from aggregates — standard t-test is statistically invalid |
+| Sample Ratio Mismatch | 10% drift threshold on n_ctrl vs n_trt | Detects assignment bugs before reasoning begins |
+
+Output (`StatEvidenceBundle`) fields: `layers_present`, `metrics[]` (p-value, CI, effect_size, verdict per metric), `guardrail_status_check[]`, `srm_flag`.
+
+Bundle is written to `data/stat_evidence/<run_id>_stat_evidence_bundle_v1.json` with SHA256 sidecar and consumed by Doctor and Commander agent contexts.
+
+### reasoning_confidence (`src/reasoning_confidence.py`)
+
+Computes a dynamic confidence score from `configs/contracts/reasoning_confidence_policy_v1.json`. Replaces the previous hardcoded constant.
+
+Penalty system (applied to base score of 0.58):
+- `layer1_missing`: −0.20
+- `layer2_missing`: −0.15
+- `guardrail_data_incomplete`: −0.15
+- `underpowered_or_no_data`: −0.18
+- `srm_failed`: −0.12
+
+Hard caps (ceiling, not floor):
+- `partial_or_failed_paired_status`: 0.60 — incomplete treatment evidence cannot produce high-confidence decisions
+- `single_mode_no_live_evidence`: 0.64
+- `missing_layers12`: 0.62
+
+Bonus: +0.07 if primary metric p-value < 0.05 (significant result confirmed by data).
+
+Returns `(float, list[str])` — score and basis list for full auditability.
+
+---
+
 ## API Key Auto-Loading
 
 The runtime automatically loads `GROQ_API_KEY` from `~/.groq_secrets` at startup via `_inject_groq_key_if_needed()`.
