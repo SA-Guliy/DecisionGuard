@@ -23,7 +23,7 @@ DEMO_ROOT = ROOT / "examples/investor_demo"
 HUMAN_DIR = DEMO_ROOT / "reports_for_humans"
 AGENT_DIR = DEMO_ROOT / "reports_for_agents"
 SYNTH_DIR = DEMO_ROOT / "synthetic_data"
-DEMO_SOURCE_ROOT = ROOT / "demo_sources/investor_demo"
+DEMO_SOURCE_ROOT = ROOT / "examples/investor_demo/src"
 
 UNIX_ABS_RE = re.compile(r"/Users/[^\n`\"'<>]+")
 WIN_ABS_RE = re.compile(r"[A-Za-z]:\\\\[^\s`\"'<>]+")
@@ -180,7 +180,7 @@ def _resolve_demo_sources() -> tuple[dict[str, Path], str]:
         "history_sot": DEMO_SOURCE_ROOT / "history_sot_v1.json",
     }
     if all(p.exists() for p in demo_candidates.values()):
-        return demo_candidates, "demo_sources"
+        return demo_candidates, "examples_src"
     runtime_candidates = {
         "batch_summary": ROOT / "data/batch_eval/mass_test_003_summary.json",
         "decision_card": ROOT / "reports/L1_ops/demo_golden_example/POC_DECISION_CARD_SPRINT2.md",

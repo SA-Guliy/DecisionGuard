@@ -325,7 +325,7 @@ def _render_checklist(payload: dict[str, Any]) -> str:
     lines.append(f"- blocking_failures: `{payload.get('blocking_failures', 0)}`")
     lines.append("")
     lines.append("## Blocking Pre-Push Controls")
-    lines.append("- `git add demo_sources/investor_demo/*`")
+    lines.append("- `git add examples/investor_demo/src/*`")
     lines.append("- Ensure the command above is executed before final push/commit for publish release.")
     lines.append("")
     return "\n".join(lines) + "\n"

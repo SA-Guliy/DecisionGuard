@@ -9,7 +9,7 @@ class BuildInvestorDemoStagingTests(unittest.TestCase):
     def test_synthetic_sample_prefers_reports_and_fallbacks_to_experiments(self) -> None:
         from_reports = staging._build_synthetic_sample(
             {"reports": [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]},
-            "demo_sources/investor_demo/history_sot_v1.json",
+            "examples/investor_demo/src/history_sot_v1.json",
         )
         self.assertEqual(from_reports["sample_count"], 3)
         self.assertEqual(len(from_reports["sample"]), 3)
@@ -17,14 +17,14 @@ class BuildInvestorDemoStagingTests(unittest.TestCase):
 
         from_experiments = staging._build_synthetic_sample(
             {"experiments": [{"id": "a"}, {"id": "b"}]},
-            "demo_sources/investor_demo/history_sot_v1.json",
+            "examples/investor_demo/src/history_sot_v1.json",
         )
         self.assertEqual(from_experiments["sample_count"], 2)
         self.assertEqual(from_experiments["sample"][0]["id"], "a")
 
     def test_resolve_demo_sources_prefers_repo_tracked_demo_sources(self) -> None:
         sources, profile = staging._resolve_demo_sources()
-        self.assertEqual(profile, "demo_sources")
+        self.assertEqual(profile, "examples_src")
         required = {
             "batch_summary",
             "decision_card",

@@ -356,7 +356,7 @@ domain_templates/  External domain physics (Open Core monetization layer)
 docs/              Methodology, runbooks, architecture specs
 tests/             Regression, fail-closed, and contract tests
 examples/          Public investor demo artifacts (staging_only SoT)
-demo_sources/      Pre-sanitized demo source files (committed, not published)
+examples/investor_demo/src/   Raw pre-sanitized demo source files (input to staging pipeline)
 ```
 
 ---
@@ -405,7 +405,7 @@ python3 scripts/run_publish_release_audit.py \
   --strict 1
 
 # 3. Confirm pre-push control
-git add demo_sources/investor_demo/*
+git add examples/investor_demo/src/*
 ```
 
 Push protection: [`.githooks/pre-push`](.githooks/pre-push) — blocks pushes containing internal paths. Deny-list patterns maintained in [`.gitignore`](.gitignore).
