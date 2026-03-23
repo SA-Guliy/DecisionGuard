@@ -2,7 +2,7 @@
 
 > Multi-agent governance framework protecting product decisions from toxic metrics and Goodhart's Law via deterministic LLM guardrails.
 
-[![CI](https://github.com/your-org/decisionguard/actions/workflows/ci-governance.yml/badge.svg)](https://github.com/your-org/decisionguard/actions/workflows/ci-governance.yml)
+[![CI](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml/badge.svg)](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-311/)
 [![License: Private](https://img.shields.io/badge/license-private_evaluation-lightgrey.svg)]()
 [![Tests](https://img.shields.io/badge/tests-123_passing-brightgreen.svg)]()
