@@ -64,11 +64,11 @@ A variant with +8% AOV that quietly erodes fill rate below threshold is a NO-GO.
 
 ```mermaid
 flowchart TD
-    A([Experiment Hypothesis\n+ Metrics + Context]) --> B[Contract & Data\nQuality Gates]
-    B --> C[Captain\nSanity & Realism Check]
-    C --> D[Doctor\nHypothesis Review]
-    D --> E[Commander\nFinal Governance Decision]
-    E --> F([Decision Card\n+ ROI Scorecard])
+    A([Experiment Hypothesis<br/>+ Metrics + Context]) --> B[Contract & Data<br/>Quality Gates]
+    B --> C[Captain<br/>Sanity & Realism Check]
+    C --> D[Doctor<br/>Hypothesis Review]
+    D --> E[Commander<br/>Final Governance Decision]
+    E --> F([Decision Card<br/>+ ROI Scorecard])
 
     style A fill:#f0f4ff,stroke:#6b7cff
     style F fill:#f0fff4,stroke:#38a169
