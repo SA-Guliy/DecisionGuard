@@ -165,6 +165,7 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 - **Integrity-First**: every artifact has a SHA256 sidecar (`.sha256`). Tamper = fail. Manifests track full file hash chains across runs
 - **Privacy-First**: AES-256-CBC + PBKDF2 KMS envelope with data key separation. Sensitive values are obfuscated before any LLM call via vectorized placeholder mapping; local obfuscation map is encrypted with roundtrip-verified decrypt before storage. Cloud LLM never sees raw data
 - **Runtime Resilience**: Groq → Ollama → Deterministic local, with `provisional` tagging and cloud reconciliation on recovery (see [Provisional Decision Flow](#provisional-decision-flow))
+- **Reasoning Continuity**: Doctor and Commander maintain 2 reasoning-capable model tiers before falling to a non-reasoning fallback. Known decommissioned models are filtered pre-call (no latency cost); unknown failures are caught at runtime and the next tier is selected automatically. Updating the chain requires changing one file: `src/model_policy.py`
 - **Evidence-Grounded**: every decision cites historical precedents with similarity scores — grounded in your own experiment history, not LLM speculation
 - **Full Observability**: every LLM call records `model`, `backend`, `prompt_tokens`, `completion_tokens`, `latency_ms`, `cost_usd_estimate`, and `fallback_reason`. 23 event bus topics with named schemas — no anonymous payloads
 - **Replaceable-by-Python test**: each agent is evaluated on whether LLM reasoning adds measurable value beyond deterministic logic

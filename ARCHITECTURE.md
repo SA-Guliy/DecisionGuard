@@ -37,6 +37,26 @@ Each agent has a dedicated model chain. Doctor and Commander use **reasoning mod
 
 `openai/gpt-oss-120b` and `openai/gpt-oss-20b` are reasoning models served via Groq — API responses include a `reasoning` field and non-zero `reasoning_tokens` in usage. `llama-3.3-70b-versatile` is the last-resort non-reasoning fallback before dropping to Ollama.
 
+### Reasoning Continuity Under Model Decommissions
+
+Groq frequently removes models from service without advance notice. This is a real operational risk: a model that worked yesterday may return `model_not_found` today.
+
+DecisionGuard handles this at two levels:
+
+**Level 1 — Known decommissions (pre-call filter).**
+`DECOMMISSIONED_GROQ_MODELS` in `src/runtime_failover.py` lists models confirmed as removed. These are skipped before the API call — no latency cost, no error log noise. Current decommissioned list: `deepseek-r1-distill-qwen-32b`, `mixtral-8x7b-32768`, `llama-3.1-70b-versatile`.
+
+**Level 2 — Unknown failures (runtime catch).**
+Any model not in the decommission list is attempted. On exception (HTTP 404, 503, timeout), the error is logged as `[DEBUG CLOUD ERROR]` and the runtime automatically advances to the next tier — no manual intervention required.
+
+**Reasoning guarantee.**
+Both Doctor and Commander have at least two reasoning-capable tiers before falling to a non-reasoning model:
+- If `qwen/qwen3-32b` is decommissioned → `openai/gpt-oss-120b` (Doctor) or `openai/gpt-oss-20b` (Commander) takes over, both confirmed reasoning.
+- Only if both reasoning tiers fail does the system fall to `llama-3.3-70b-versatile` (non-reasoning, still produces a decision).
+
+**Updating the model chain.**
+When Groq announces a decommission: add the model ID to `DECOMMISSIONED_GROQ_MODELS` and optionally add a new model to the agent's chain — both in `src/model_policy.py`. No other files need to change.
+
 ### Implementation Path
 1. Each agent builds tiers with `build_runtime_failover_tiers(...)`.
 2. Generation is executed through `generate_with_runtime_failover(...)`.
