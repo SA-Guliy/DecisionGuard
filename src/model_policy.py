@@ -25,7 +25,14 @@ DOCTOR_GROQ_REASONING_CHAIN = (
 
 # Agent 3 (Commander): final decision reasoning + causal trade-off analysis.
 COMMANDER_GROQ_PRIMARY_MODEL = "qwen/qwen3-32b"
+COMMANDER_GROQ_REASONING_FALLBACK_MODEL = "openai/gpt-oss-20b"
 COMMANDER_GROQ_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+
+COMMANDER_GROQ_REASONING_CHAIN = (
+    COMMANDER_GROQ_PRIMARY_MODEL,
+    COMMANDER_GROQ_REASONING_FALLBACK_MODEL,
+    COMMANDER_GROQ_FALLBACK_MODEL,
+)
 
 
 def groq_model_for_agent(agent: str, *, fallback: bool = False) -> str:
@@ -35,7 +42,7 @@ def groq_model_for_agent(agent: str, *, fallback: bool = False) -> str:
     if a == "doctor":
         return DOCTOR_GROQ_FALLBACK_MODEL if fallback else DOCTOR_GROQ_PRIMARY_MODEL
     if a == "commander":
-        return COMMANDER_GROQ_FALLBACK_MODEL if fallback else COMMANDER_GROQ_PRIMARY_MODEL
+        return COMMANDER_GROQ_REASONING_FALLBACK_MODEL if fallback else COMMANDER_GROQ_PRIMARY_MODEL
     return GROQ_MODEL_DEFAULT
 
 

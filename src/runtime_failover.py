@@ -9,6 +9,7 @@ from src.model_policy import (
     CAPTAIN_GROQ_MODEL,
     COMMANDER_GROQ_FALLBACK_MODEL,
     COMMANDER_GROQ_PRIMARY_MODEL,
+    COMMANDER_GROQ_REASONING_CHAIN,
     DOCTOR_GROQ_REASONING_CHAIN,
 )
 
@@ -23,8 +24,7 @@ class FailoverTier:
 ACTIVE_GROQ_MODELS: tuple[str, ...] = (
     CAPTAIN_GROQ_MODEL,
     *DOCTOR_GROQ_REASONING_CHAIN,
-    COMMANDER_GROQ_PRIMARY_MODEL,
-    COMMANDER_GROQ_FALLBACK_MODEL,
+    *COMMANDER_GROQ_REASONING_CHAIN,
     "llama-3.1-8b-instant",
     "llama-3.3-70b-versatile",
     "qwen/qwen3-32b",
