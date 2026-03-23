@@ -13,7 +13,7 @@
 <!-- Demo GIF: replace the block below with your recorded scenario -->
 > **Demo scenario:** Flash discount experiment scores +15% conversion locally →
 > system surfaces historical precedent (GP margin −12.5%, fill-rate −24%) →
-> verdict: `HOLD_NEED_DATA` with cited evidence. Cost: $0.0031. Latency: 888ms.
+> verdict: `HOLD_NEED_DATA` with cited evidence. Cost: $0.002. Latency: 888ms.
 >
 > *[GIF coming — see [demo scenario](docs/demo_scenario.md) to record]*
 
@@ -133,7 +133,7 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 | Availability | **100%** | Cloud + edge + local failover, zero downtime |
 | False Negative Rate | **0%** | 0 risky experiments approved across adversarial test suite |
 | False Positive Rate | **40%** | Conservative by design at PoC stage — calibration roadmap below |
-| Cost per decision | **$0.0031** | $0.039 total / 20 cases on cloud LLM path |
+| Cost per decision | **$0.002** | $0.039 total / 20 cases on cloud LLM path |
 | Reconciliation | **Implemented** | Worker live: `accepted` / `updated` with human approval gate |
 
 **On FNR = 0%:** Verified across a 5-scenario adversarial suite covering margin erosion, availability starvation, underpowered tests, methodology mismatch, and competitor confounding. Zero harmful experiments approved in all scenarios.
@@ -251,7 +251,7 @@ Simulation knobs: `enable_demand_shocks`, `enable_supply_realism`, `enable_ops_n
 | Domain-agnostic policy contracts | ✅ | ❌ | ❌ | ❌ |
 | 14-day experiment coverage gate | ✅ | ❌ | ❌ | ❌ |
 | Edge fallback + provisional decisions | ✅ | ❌ | ❌ | ❌ |
-| Cost per decision | $0.0031 | SaaS pricing | SaaS pricing | Infra cost |
+| Cost per decision | $0.002 | SaaS pricing | SaaS pricing | Infra cost |
 | Goodhart's Law detection | ✅ | ❌ | ❌ | ❌ |
 
 > DecisionGuard is not a replacement for Statsig or LaunchDarkly — it is a governance layer that sits on top of them.
