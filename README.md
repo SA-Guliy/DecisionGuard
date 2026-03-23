@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml/badge.svg)](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-311/)
-[![License: Private](https://img.shields.io/badge/license-private_evaluation-lightgrey.svg)]()
+[![License: All Rights Reserved](https://img.shields.io/badge/license-All_Rights_Reserved-lightgrey.svg)]()
 [![Tests](https://img.shields.io/badge/tests-123_passing-brightgreen.svg)]()
 [![Secrets: 0](https://img.shields.io/badge/hardcoded_secrets-0-brightgreen.svg)]()
 
