@@ -131,8 +131,8 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Availability | **100%** | Cloud + edge + local failover, zero downtime |
-| False Negative Rate | **0%** | 0 risky experiments approved across adversarial test suite |
-| False Positive Rate | **40%** | Conservative by design at PoC stage — calibration roadmap below |
+| FNR — risky approved (adversarial suite) | **0%** | 0 risky experiments approved across 5-scenario adversarial suite |
+| FPR — safe blocked (mass_test_003 batch) | **40%** | 4/10 safe cases over-conservatively held; by design at PoC stage |
 | Cost per decision | **$0.002** | $0.039 total / 20 cases on cloud LLM path |
 | Reconciliation | **Implemented** | Worker live: `accepted` / `updated` with human approval gate |
 
