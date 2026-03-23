@@ -67,6 +67,12 @@ human_reports/
 # Legacy version archive
 v1/
 
+# Internal planning and storyboard docs
+STORYBOARD.md
+
+# Historical corpus (internal operational directory)
+not_delete_historical_patterns/
+
 # Operational runbooks and migration artifacts
 CLEANUP_RUNBOOK.md
 MIGRATION_MANIFEST.json
