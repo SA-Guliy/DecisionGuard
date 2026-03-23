@@ -150,6 +150,7 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 | **Test suite** | 123 passing tests · adversarial scenario suite · tamper detection · end-to-end subprocess tests · cloud gateway tests with fake backend |
 | **Security** | AES-256-CBC + PBKDF2 · KMS envelope (data key ≠ master key) · roundtrip decrypt verification · ACL on obfuscation map reads · append-only audit JSONL · zero hardcoded secrets |
 | **Observability** | Per-call: model + backend + tokens + latency + cost · Per-run: gate results with `blocked_by[]` + `required_actions[]` · Immutable audit trail |
+| **Model policy** | Captain: `llama-3.1-8b-instant` · Doctor: `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b` → `openai/gpt-oss-20b` · Commander: `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b` · Local: `gemma3:1b` (Ollama) · Doctor and Commander guaranteed 2+ reasoning tiers before non-reasoning fallback |
 | **Event bus** | 23 topic schemas · topic registry with schema refs · no anonymous payloads |
 | **LOC** | 45K+ · 0 hardcoded secrets · 0 TODO/FIXME · full type hints |
 

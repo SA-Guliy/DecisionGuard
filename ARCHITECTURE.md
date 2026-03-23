@@ -24,6 +24,19 @@ The failover order is deterministic:
 
 `local_mock` is disallowed by policy in `runtime_failover`.
 
+### Agent Model Policy (`src/model_policy.py`)
+
+Each agent has a dedicated model chain. Doctor and Commander use **reasoning models** (confirmed via `reasoning_tokens` in API response). Single source of truth: `src/model_policy.py`.
+
+| Agent | Role | Model chain (priority order) | Reasoning tiers |
+|---|---|---|---|
+| **Captain** | Sanity & realism check | `llama-3.1-8b-instant` (Groq) | — (not required for QA gate) |
+| **Doctor** | Hypothesis audit | `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `openai/gpt-oss-20b` | 3 of 4 |
+| **Commander** | Final governance decision | `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` | 2 of 3 |
+| **Local fallback** | API outage only | `gemma3:1b` (Ollama) | — (provisional, pending reconciliation) |
+
+`openai/gpt-oss-120b` and `openai/gpt-oss-20b` are reasoning models served via Groq — API responses include a `reasoning` field and non-zero `reasoning_tokens` in usage. `llama-3.3-70b-versatile` is the last-resort non-reasoning fallback before dropping to Ollama.
+
 ### Implementation Path
 1. Each agent builds tiers with `build_runtime_failover_tiers(...)`.
 2. Generation is executed through `generate_with_runtime_failover(...)`.

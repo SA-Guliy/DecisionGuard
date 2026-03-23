@@ -115,6 +115,7 @@ The system must detect those hidden risks early, produce auditable decisions, an
 4. No autonomous rollout mutation; only recommendation output with Human-in-the-Loop approval. When reconciliation produces an `updated` outcome (cloud decision differs from provisional), `human_approval_required=true` is set in the artifact — cloud override is never auto-applied.
 5. Provisional decisions are complete operational outputs, not error states. Every provisional artifact must contain a full decision, rationale, and `needs_cloud_reconciliation=true` flag.
 6. Reconciliation outcome must be one of two explicit states: `accepted` (provisional confirmed) or `updated` (cloud decision replaces provisional). Silent reconciliation is not permitted.
+7. Doctor and Commander must be served by a reasoning model for at least the first two fallback tiers. Model policy (`src/model_policy.py`) is the single source of truth: Doctor chain — `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `openai/gpt-oss-20b`; Commander chain — `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile`. `openai/gpt-oss-*` models confirmed as reasoning via `reasoning_tokens` in API response.
 
 ### 5.2 Performance & Capacity
 1. Host memory budget target: 8 GB total.
