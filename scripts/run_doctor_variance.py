@@ -44,6 +44,7 @@ from src.security_utils import sha256_sidecar_path, write_sha256_sidecar
 from src.visible_reasoning_trace import build_visible_reasoning_trace_advisory
 from src.runtime_failover import build_runtime_failover_tiers, generate_with_runtime_failover
 from src.stat_engine import compute_stat_evidence
+from src.stat_evidence_formatter import format_stat_evidence_for_prompt
 
 DOCTOR_VARIANCE_GROQ_MODEL = DOCTOR_GROQ_FALLBACK_MODEL
 DOCTOR_VARIANCE_DEEPSEEK_MODEL = DOCTOR_GROQ_PRIMARY_MODEL
@@ -2036,6 +2037,7 @@ def _llm_context_rewriter_hypothesis_portfolio(
     captain: dict[str, Any],
     synthetic_bias: dict[str, Any],
     model_override: str | None = None,
+    stat_bundle: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     requested_model = _doctor_model_override_for_backend(backend_name, model_override)
     groq_candidates = [requested_model, DOCTOR_VARIANCE_GROQ_MODEL, DOCTOR_GROQ_FALLBACK_MODEL]
@@ -2066,12 +2068,15 @@ def _llm_context_rewriter_hypothesis_portfolio(
     signals = synthetic_bias.get("signals", []) if isinstance(synthetic_bias.get("signals"), list) else []
     metric_keys = [str(x).strip() for x in sorted(READY_NOW_METRICS) if str(x).strip()][:10]
     llm_metrics = {metric_name: metrics.get(metric_name) for metric_name in metric_keys}
-    llm_input = {
+    llm_input: dict[str, Any] = {
         "run_id": run_id,
         "metrics": llm_metrics,
         "captain_issues": captain_issues[:8],
         "synthetic_bias_signals": signals[:8],
     }
+    stat_evidence_text = format_stat_evidence_for_prompt(stat_bundle)
+    if stat_evidence_text:
+        llm_input["stat_evidence"] = stat_evidence_text
     target_aliases = sorted(domain_target_metric_aliases())
     if not target_aliases:
         raise ConfigurationError("Domain template target aliases are required for context rewriter")
@@ -2144,6 +2149,7 @@ def _build_hypothesis_portfolio_with_mode(
     backend_name: str,
     output_schema: dict[str, Any],
     model_override: str | None = None,
+    stat_bundle: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     if not dynamic_enabled:
         portfolio = _build_hypothesis_portfolio(run_id, metrics, captain, synthetic_bias, dynamic_enabled=False)
@@ -2157,6 +2163,7 @@ def _build_hypothesis_portfolio_with_mode(
             captain=captain,
             synthetic_bias=synthetic_bias,
             model_override=model_override,
+            stat_bundle=stat_bundle,
         )
         _validate_context_rewriter_portfolio_against_schema(portfolio, output_schema)
         return portfolio, "context_rewriter", prov
@@ -3692,6 +3699,7 @@ def main() -> None:
             backend_name=args.backend,
             output_schema=output_schema,
             model_override=(DOCTOR_VARIANCE_DEEPSEEK_MODEL if enable_deepseek_doctor else DOCTOR_VARIANCE_GROQ_MODEL),
+            stat_bundle=stat_bundle_payload if isinstance(stat_bundle_payload, dict) else None,
         )
         unique_hyp_ids = {str(h.get("hypothesis_id", "")).strip() for h in hypothesis_portfolio if str(h.get("hypothesis_id", "")).strip()}
         unique_levers = {str(h.get("lever_type", "")).strip() for h in hypothesis_portfolio if str(h.get("lever_type", "")).strip()}

@@ -31,6 +31,7 @@ from src.domain_template import (
 from src.reasoning_feature_flags import load_reasoning_feature_flags
 from src.llm_contract_utils import coerce_string, coerce_string_list, normalize_confidence_label, parse_json_object_loose
 from src.runtime_failover import build_runtime_failover_tiers, generate_with_runtime_failover
+from src.stat_evidence_formatter import format_stat_evidence_for_prompt
 from src.runtime_controls import get_retry_budget_status, load_retry_policy_contract, register_retry_outcome, write_retry_guard_report
 from src.status_taxonomy import (
     AB_DECISION_INVALID_STATUSES,
@@ -776,6 +777,9 @@ def _commander_llm_input(payload: dict[str, Any]) -> dict[str, Any]:
             "goal_metric_misalignment_forces_stop": True,
             "guardrails_hard_constraints": True,
         },
+        "stat_evidence": format_stat_evidence_for_prompt(
+            payload.get("stat_bundle") if isinstance(payload.get("stat_bundle"), dict) else None
+        ) or None,
     }
 
 
@@ -2913,6 +2917,7 @@ def main() -> None:
                 "contract_version": "commander_priority.v1",
                 "decision_contract_version": str(decision_contract.get("version", "decision_contract_v1")),
                 "schema_version": "commander_priority_output.v1",
+                "stat_bundle": stat_bundle if isinstance(stat_bundle, dict) else {},
                 "hypothesis_review_mode": hypothesis_review_mode,
                 "doctor_hypothesis_review": doctor_hypothesis_review,
                 "hypothesis_review_summary": hypothesis_review_summary,
