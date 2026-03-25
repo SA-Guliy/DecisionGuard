@@ -78,11 +78,8 @@ MIGRATION_MANIFEST.json
 MIGRATION_MANIFEST.md
 rollback.sh
 
-# Publishing meta-workflow (internal process docs)
+# Publishing meta-workflow (PUBLISH_AUDIT_CHECKLIST is generated output)
 PUBLISH_AUDIT_CHECKLIST.md
-PUBLISH_DENYLIST.txt
-PUBLISH_WHITELIST.txt
-PUBLISH_MANIFEST.md
 
 # Internal working docs and archives
 docs/archive/
