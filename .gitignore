@@ -70,8 +70,7 @@ v1/
 # Internal planning and storyboard docs
 STORYBOARD.md
 
-# Historical corpus (internal operational directory)
-not_delete_historical_patterns/
+# Historical corpus — committed to git as CI test fixtures (synthetic data only)
 
 # Operational runbooks and migration artifacts
 CLEANUP_RUNBOOK.md
