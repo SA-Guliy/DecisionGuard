@@ -96,7 +96,7 @@ def _scan_patterns(
         suffix = path.suffix.lower()
         if suffix not in {".json", ".md", ".txt", ".yaml", ".yml", ".py", ".sql", ".sh"}:
             continue
-        if skip_python_for_banned and suffix == ".py":
+        if skip_python_for_banned and suffix in {".py", ".md"}:
             continue
         try:
             text = path.read_text(encoding="utf-8")

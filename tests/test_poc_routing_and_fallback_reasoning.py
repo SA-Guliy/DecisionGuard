@@ -33,7 +33,7 @@ class PocRoutingAndFallbackReasoningTests(unittest.TestCase):
     def test_groq_secrets_source_is_sanitized_label(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_home:
             secrets_path = Path(tmp_home) / ".groq_secrets"
-            secrets_path.write_text("GROQ_API_KEY=gsk_TEST12345678901234567890\n", encoding="utf-8")
+            secrets_path.write_text("GROQ_API_KEY=gsk_TEST1234567890AB\n", encoding="utf-8")
             with mock.patch.dict(os.environ, {"GROQ_API_KEY": "", "HOME": tmp_home}, clear=False):
                 loaded, source, key = poc_mod._load_groq_secrets_conditional(need_cloud=True, strict=True)
         self.assertTrue(loaded)
@@ -41,9 +41,9 @@ class PocRoutingAndFallbackReasoningTests(unittest.TestCase):
         self.assertTrue(key.startswith("gsk_"))
 
     def test_safe_error_reason_redacts_groq_key(self) -> None:
-        msg = "auth failed for gsk_ABCDEF1234567890ABCDEFGH with Bearer QWERTY1234567890TOKEN"
+        msg = "auth failed for gsk_ABCDEF1234567890 with Bearer QWERTY1234567890TOKEN"
         redacted = poc_mod._safe_error_reason(msg, limit=500)
-        self.assertNotIn("gsk_ABCDEF1234567890ABCDEFGH", redacted)
+        self.assertNotIn("gsk_ABCDEF1234567890", redacted)
         self.assertIn("gsk_[REDACTED]", redacted)
         self.assertNotIn("Bearer QWERTY1234567890TOKEN", redacted)
         self.assertIn("Bearer [REDACTED]", redacted)

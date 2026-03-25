@@ -15,7 +15,7 @@
 > system surfaces historical precedent (GP margin −12.5%, fill-rate −24%) →
 > verdict: `HOLD_NEED_DATA` with cited evidence. Cost: $0.002. Latency: 888ms.
 >
-> *[GIF coming — see [demo scenario](docs/demo_scenario.md) to record]*
+> *[GIF coming — demo recording in progress]*
 
 ---
 
@@ -410,7 +410,7 @@ python3 scripts/run_publish_release_audit.py \
 git add examples/investor_demo/src/*
 ```
 
-Push protection: [`.githooks/pre-push`](.githooks/pre-push) — blocks pushes containing internal paths. Deny-list patterns maintained in [`.gitignore`](.gitignore).
+Push protection: `.githooks/pre-push` — blocks pushes containing internal paths. Deny-list patterns maintained in [`.gitignore`](.gitignore).
 
 </details>
 
