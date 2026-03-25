@@ -108,6 +108,10 @@ class PocRoutingAndFallbackReasoningTests(unittest.TestCase):
             poc_mod,
             "_append_synthetic_trace",
             return_value={"run_id": "t1", "agent": "doctor_edge_heuristic"},
+        ), mock.patch.object(
+            poc_mod,
+            "_debug_cloud_error",
+            return_value=None,
         ):
             result, meta = poc_mod._doctor_analysis(
                 run_id="t1",
