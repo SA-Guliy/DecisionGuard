@@ -92,3 +92,4 @@ docs/security_migration_note.md
 
 # Database schema (internal)
 sql/
+IMPLEMENTATION_PLAN.md
