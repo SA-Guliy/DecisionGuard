@@ -1,34 +1,80 @@
 #!/usr/bin/env bash
-# pre-push hook: warns if any file about to be pushed looks like it shouldn't be public.
+# pre-push hook: blocks pushes when changed files match deny patterns for public repo policy.
 # Install: git config core.hooksPath .githooks
 
 set -euo pipefail
 
-DENY_PATTERNS=(
-  "docs/archive/"
-  "docs/executable_prd"
-  "docs/security_migration"
-  "sql/"
-  "CLEANUP_RUNBOOK"
-  "MIGRATION_MANIFEST"
-  "PUBLISH_AUDIT_CHECKLIST"
-  "PUBLISH_DENYLIST"
-  "PUBLISH_WHITELIST"
-  "PUBLISH_MANIFEST"
-  "rollback.sh"
-  "AGENT_EVAL_INTERNAL"
-  "AUDIT.md"
-  "REPO_TREE.md"
-  "cursorrules"
-  "reports/"
-  "human_reports/"
-  "v1/"
+DENYLIST_FILE="PUBLISH_DENYLIST.txt"
+STATIC_SENSITIVE_PATTERNS=(
   ".env"
+  ".env.local"
+  ".env.development"
+  ".env.test"
+  ".env.production"
+  "**/.env"
+  "**/.env.local"
+  "**/.env.development"
+  "**/.env.test"
+  "**/.env.production"
   ".groq_secrets"
+  "**/.groq_secrets"
 )
+ALLOW_EXACT_FILES=(
+  ".env.example"
+)
+
+trim_line() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+load_deny_patterns() {
+  local patterns=()
+  if [[ ! -f "$DENYLIST_FILE" ]]; then
+    echo "⛔ PRE-PUSH BLOCK: missing deny policy file: $DENYLIST_FILE"
+    echo "Push aborted."
+    exit 1
+  fi
+  while IFS= read -r raw; do
+    local line
+    line="$(trim_line "$raw")"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    patterns+=("$line")
+  done < "$DENYLIST_FILE"
+  patterns+=("${STATIC_SENSITIVE_PATTERNS[@]}")
+  printf '%s\n' "${patterns[@]}"
+}
+
+pattern_matches_file() {
+  local file="$1"
+  local pattern="$2"
+  if [[ "$pattern" == *"*"* || "$pattern" == *"?"* || "$pattern" == *"["* ]]; then
+    [[ "$file" == $pattern ]]
+    return $?
+  fi
+  [[ "$file" == "$pattern" ]]
+  return $?
+}
+
+is_explicitly_allowed() {
+  local file="$1"
+  for allowed in "${ALLOW_EXACT_FILES[@]}"; do
+    if [[ "$file" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 REMOTE="$1"
 URL="$2"
+DENY_PATTERNS=()
+while IFS= read -r pattern; do
+  [[ -z "$pattern" ]] && continue
+  DENY_PATTERNS+=("$pattern")
+done < <(load_deny_patterns)
 
 # Collect all files that would be pushed (new commits vs remote)
 while read local_ref local_sha remote_ref remote_sha; do
@@ -47,8 +93,11 @@ while read local_ref local_sha remote_ref remote_sha; do
 
   BLOCKED=()
   for file in $files; do
+    if is_explicitly_allowed "$file"; then
+      continue
+    fi
     for pattern in "${DENY_PATTERNS[@]}"; do
-      if [[ "$file" == *"$pattern"* ]]; then
+      if pattern_matches_file "$file" "$pattern"; then
         BLOCKED+=("  BLOCKED: $file  (matches pattern: $pattern)")
         break
       fi
