@@ -3,7 +3,7 @@
   "template_id": "darkstore_fresh_v1",
   "template_metadata": {
     "domain_name": "darkstore_fresh",
-    "description": "Public evaluation repository sample from the Proprietary Domain Library. Focus: Grocery delivery unit economics.",
+    "description": "Public evaluation repository sample. Focus: Grocery delivery unit economics.",
     "version": "2.0.0"
   },
   "metrics_dictionary": {
