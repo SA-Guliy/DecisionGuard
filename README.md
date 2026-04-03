@@ -128,17 +128,22 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 
 ## PoC Results (mass_test_003 — 20 cases, darkstore domain)
 
+Canonical metric definitions (FNR/FPR): [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md)
+
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Availability | **100%** | Cloud + edge + local failover, zero downtime |
+| Availability (mass_test_003) | **100%** | Cloud + edge + local failover, zero downtime |
+| FNR — risky approved (mass_test_003) | **10%** | 1/10 risky experiments approved (`risk_009`) |
+| FPR — safe blocked (mass_test_003) | **40%** | 4/10 safe cases over-conservatively held; by design at PoC stage |
 | FNR — risky approved (adversarial suite) | **0%** | 0 risky experiments approved across 5-scenario adversarial suite |
-| FPR — safe blocked (mass_test_003 batch) | **40%** | 4/10 safe cases over-conservatively held; by design at PoC stage |
-| Cost per decision | **$0.002** | $0.039 total / 20 cases on cloud LLM path |
+| Cost per decision (mass_test_003) | **$0.002** | $0.039 total / 20 cases on cloud LLM path |
 | Reconciliation | **Implemented** | Worker live: `accepted` / `updated` with human approval gate |
 
-**On FNR = 0%:** Verified across a 5-scenario adversarial suite covering margin erosion, availability starvation, underpowered tests, methodology mismatch, and competitor confounding. Zero harmful experiments approved in all scenarios.
+**On FNR (mass_test_003) = 10%:** One risky case (`risk_009`) was incorrectly approved as `GO`. This is a known limitation tracked in evaluation artifacts and roadmap.
 
-**On FPR = 40%:** The system is intentionally conservative at this stage. FPR is a configurable policy threshold in domain contracts — not a fixed system property. Calibration to target FPR <15% is on the roadmap via structured reasoning improvements (see [Known Gaps in PRD](PRD.md)).
+**On FNR (adversarial suite) = 0%:** Verified across a 5-scenario adversarial suite covering margin erosion, availability starvation, underpowered tests, methodology mismatch, and competitor confounding. Zero harmful experiments approved in that controlled suite.
+
+**On FPR (mass_test_003) = 40%:** The system is intentionally conservative at this stage. FPR is a configurable policy threshold in domain contracts — not a fixed system property. Calibration to target FPR <15% is on the roadmap via structured reasoning improvements (see [Known Gaps in PRD](PRD.md)).
 
 ---
 

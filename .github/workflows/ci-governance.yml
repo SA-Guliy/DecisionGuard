@@ -33,6 +33,7 @@ jobs:
             scripts/verify_acceptance.py \
             scripts/run_historical_retrieval_gate.py \
             scripts/run_agent_value_eval.py \
+            scripts/check_public_claims_consistency.py \
             scripts/update_history_corpus.py \
             scripts/build_cost_ledger.py \
             scripts/build_investor_demo_staging.py \
@@ -88,60 +89,22 @@ jobs:
             tests/test_real_kpi_ledger_logic.py \
             tests/test_kpi_ledger_integrity_v2.py \
             tests/test_poc_routing_and_fallback_reasoning.py \
+            tests/test_public_claims_consistency.py \
             tests/test_executive_roi_report_v2.py \
             tests/test_reconciliation_worker_v2.py
 
-      - name: Create publish control files
+      - name: Public claim consistency (blocking)
         run: |
-          cat > PUBLISH_WHITELIST.txt << 'EOF'
-          # Public top-level documents
-          README.md
-          PRD.md
-          ARCHITECTURE.md
-          AGENT_EVAL.md
-          .env.example
-          .gitignore
-          CLEANUP_RUNBOOK.md
-          PUBLISH_WHITELIST.txt
-          PUBLISH_DENYLIST.txt
-          PUBLISH_MANIFEST.md
-          PUBLISH_AUDIT_CHECKLIST.md
-          MIGRATION_MANIFEST.json
-          MIGRATION_MANIFEST.md
-          rollback.sh
-          # Core product code and contracts
-          src/**
-          scripts/**
-          tests/**
-          configs/**
-          domain_templates/**
-          .github/workflows/**
-          # Single Source of Truth for public demo
-          examples/investor_demo/**
-          not_delete_historical_patterns/**
-          EOF
-          cat > PUBLISH_DENYLIST.txt << 'EOF'
-          # Internal strategy / private control files
-          cursorrules
-          AUDIT.md
-          REPO_TREE.md
-          Repo_Tree._Details.md
-          # Quarantine and archive zones
-          _PROJECT_TRASH/**
-          _ARCHIVE_TO_MOVE_OUT_*/**
-          # Runtime artifacts outside demo SoT
-          data/**
-          reports/**
-          human_reports/**
-          # Security-sensitive map storage (never public)
-          data/security/obfuscation_maps/**
-          # Local / machine-specific traces
-          **/.DS_Store
-          **/*.log
-          **/*.tmp
-          **/__pycache__/**
-          **/*.pyc
-          EOF
+          python3 scripts/check_public_claims_consistency.py \
+            --batch-summary examples/investor_demo/reports_for_agents/batch_summary.json \
+            --readme README.md \
+            --agent-eval AGENT_EVAL.md \
+            --evaluation-report EVALUATION_REPORT.md
+
+      - name: Validate publish control files
+        run: |
+          test -f PUBLISH_WHITELIST.txt
+          test -f PUBLISH_DENYLIST.txt
 
       - name: Build sanitized demo staging
         run: |

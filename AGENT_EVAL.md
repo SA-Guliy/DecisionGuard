@@ -16,6 +16,8 @@ For LLM-based governance systems, outcome-only metrics (for example FPR/FNR) are
 - They do not show whether guardrails were actively enforced.
 - They do not show whether the same decision logic is stable across similar contexts.
 
+Canonical metric definitions are fixed in [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md).
+
 DecisionGuard therefore evaluates the reasoning path itself, not only the final label.
 
 ## 2. Reasoning Layer Model
@@ -43,8 +45,8 @@ A decision produced with all three layers active is held to a higher confidence 
 - Were breaches treated as hard blockers, not soft suggestions?
 
 ### Dimension 4: Decision Calibration
-- False Positive Rate: aggressive decision when risk was present.
-- False Negative Rate: HOLD decision when rollout was actually safe.
+- False Negative Rate: risky experiment approved when it should have been blocked.
+- False Positive Rate: safe experiment blocked when it should have been approved.
 
 ### Dimension 5: Hypothesis Articulation
 - Were H0 and H1 stated explicitly?
@@ -90,8 +92,8 @@ Evaluation is performed as a repeatable process:
 | Cloud-path runs | 3 (100%) |
 | Final `GO` decisions | 1 |
 | Final `HOLD_NEED_DATA` decisions | 2 |
-| FPR (aggressive decision on risk case) | **0%** (0/2) |
-| FNR (blocked safe iteration) | **0%** (0/1) |
+| FNR (risky approved) | **0%** (0/2 risky) |
+| FPR (safe blocked) | **0%** (0/1 safe) |
 | Avg reasoning confidence | **0.77** |
 | Avg cost per run | **$0.0031** |
 
@@ -120,7 +122,7 @@ Case 002 is the key test: primary metric was statistically significant and posit
 
 **Dimension 4 — Decision Calibration**
 
-FPR = 0%: both risk cases (002, 003) correctly held. FNR = 0%: the safe case (001) correctly approved.
+FNR = 0%: both risk cases (002, 003) were correctly held. FPR = 0%: the safe case (001) was correctly approved.
 
 **Dimension 5 — Hypothesis Articulation**
 
@@ -136,4 +138,3 @@ Explicit H0/H1 formulation and sensitivity analysis are not yet present in agent
 | Dynamic `reasoning_confidence` replacing hardcoded constant | Implemented |
 | Per-metric statistical method selection (Welch / Delta Method / Bootstrap) | Implemented |
 | Automated evaluation pipeline with regression detection | Planned |
-
