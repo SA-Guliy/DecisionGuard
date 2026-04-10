@@ -84,6 +84,10 @@ PUBLISH_AUDIT_CHECKLIST.md
 PUBLISH_MANIFEST.md
 
 # Internal working docs and archives
+PRD.md
+SIMULATION_ENGINE.md
+SIMULATION_ENGINE_RU.md
+RU_LOCAL_DOCS/
 docs/archive/
 docs/executable_prd_v1.md
 docs/security_migration_note.md
