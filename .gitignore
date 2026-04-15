@@ -27,8 +27,6 @@ temp/
 
 # Runtime-generated artifacts
 data/*
-!data/poc
-!data/poc/**
 github_publish/
 
 # Local DB and dumps
@@ -70,6 +68,9 @@ v1/
 # Internal planning and storyboard docs
 STORYBOARD.md
 
+# Internal historical corpus (private only)
+not_delete_historical_patterns/
+
 # Historical corpus — committed to git as CI test fixtures (synthetic data only)
 
 # Operational runbooks and migration artifacts
@@ -96,3 +97,5 @@ docs/security_migration_note.md
 sql/
 IMPLEMENTATION_PLAN.md
 EVALUATION_REPORT.md
+data/poc/history_sot_v1.json
+data/poc/history_vector_index_v1.json
