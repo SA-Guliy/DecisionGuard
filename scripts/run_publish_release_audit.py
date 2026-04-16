@@ -208,8 +208,22 @@ def _check_historical_corpus_lock(
         "integrity_issues": [],
         "denylist_hits": [],
     }
+    try:
+        corpus_rel_prefix = corpus_root.relative_to(ROOT).as_posix().rstrip("/")
+    except Exception:
+        corpus_rel_prefix = str(corpus_root).replace("\\", "/").rstrip("/")
+    deny_hits = [g for g in denylist_globs if _match_any(f"{corpus_rel_prefix}/sentinel.json", [g])]
+    details["denylist_hits"] = deny_hits[:20]
+
     if not corpus_root.exists() or not corpus_root.is_dir():
+        if deny_hits:
+            details["reason"] = "corpus_root_missing_private_denied_by_publish_policy"
+            details["non_blocking"] = True
+            return True, details
         details["reason"] = "corpus_root_missing"
+        return False, details
+    if not deny_hits:
+        details["reason"] = "corpus_path_not_denied_by_publish_policy"
         return False, details
 
     pair_count = 0
@@ -223,21 +237,13 @@ def _check_historical_corpus_lock(
 
     details["pairs_found"] = int(pair_count)
     details["integrity_issues"] = integrity_issues[:50]
-
-    corpus_rel_prefix = corpus_root.relative_to(ROOT).as_posix().rstrip("/")
-    deny_hits = [g for g in denylist_globs if _match_any(f"{corpus_rel_prefix}/sentinel.json", [g])]
-    details["denylist_hits"] = deny_hits[:20]
-
-    if deny_hits:
-        details["reason"] = "corpus_path_denied_by_publish_policy"
-        return False, details
     if pair_count < int(min_pairs):
         details["reason"] = "insufficient_json_sidecar_pairs"
         return False, details
     if integrity_issues:
         details["reason"] = "corpus_integrity_failed"
         return False, details
-    details["reason"] = "ok"
+    details["reason"] = "private_corpus_locked_and_denied"
     return True, details
 
 
