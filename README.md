@@ -126,24 +126,37 @@ When all three layers are present, agents can reason like a senior analyst: *"Pr
 
 ---
 
-## PoC Results (mass_test_003 — 20 cases, darkstore domain)
+## PoC Results (Benchmark-Scoped)
 
-Canonical metric definitions (FNR/FPR): [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md)
+Canonical metric definitions (FNR/FPR): [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md)  
+Public benchmark registry SoT: `PRD.md` (private draft; `PRD_SOT_V1_START` block exported by CI into machine artifact).
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Availability (mass_test_003) | **100%** | Cloud + edge + local failover, zero downtime |
-| FNR — risky approved (mass_test_003) | **10%** | 1/10 risky experiments approved (`risk_009`) |
-| FPR — safe blocked (mass_test_003) | **40%** | 4/10 safe cases over-conservatively held; by design at PoC stage |
-| FNR — risky approved (adversarial suite) | **0%** | 0 risky experiments approved across 5-scenario adversarial suite |
-| Cost per decision (mass_test_003) | **$0.002** | $0.039 total / 20 cases on cloud LLM path |
-| Reconciliation | **Implemented** | Worker live: `accepted` / `updated` with human approval gate |
+### Results by Benchmark
 
-**On FNR (mass_test_003) = 10%:** One risky case (`risk_009`) was incorrectly approved as `GO`. This is a known limitation tracked in evaluation artifacts and roadmap.
+| Benchmark | Scope | FNR (risky approved) | FPR (safe blocked, non-GO) | FPR stop-only | Source |
+|---|---|---|---|---|---|
+| `mass_test_003` | 20 cases (10 risky, 10 safe) | FNR risky approved = **10% (1/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | FPR safe blocked = **40% (4/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | **0% (0/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | `examples/investor_demo/reports_for_agents/mass_test_003_summary.json` |
+| `investor_demo_batch_v2` | 3 curated cases (2 risky, 1 safe) | FNR risky approved = **0% (0/2)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | FPR safe blocked = **0% (0/1)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | **0% (0/1)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | `examples/investor_demo/reports_for_agents/batch_summary.json` |
+| `adversarial_suite_v1` | 5 risky scenarios | FNR risky approved = **0% (0/5)** `benchmark_id=adversarial_suite_v1, as_of_date=2026-02-27` | N/A (no safe denominator) | N/A | `data/eval/adversarial_suite_v13_agent_prod_013.json` |
 
-**On FNR (adversarial suite) = 0%:** Verified across a 5-scenario adversarial suite covering margin erosion, availability starvation, underpowered tests, methodology mismatch, and competitor confounding. Zero harmful experiments approved in that controlled suite.
+Explicit denominator note for risk-only benchmark:
+- FPR safe blocked = N/A, `benchmark_id=adversarial_suite_v1, as_of_date=2026-02-27` (no safe denominator).
 
-**On FPR (mass_test_003) = 40%:** The system is intentionally conservative at this stage. FPR is a configurable policy threshold in domain contracts — not a fixed system property. Calibration to target FPR <15% is on the roadmap via structured reasoning improvements (see [Known Gaps in PRD](PRD.md)).
+Additional operational metrics:
+- Availability (`mass_test_003`): **100%**, `benchmark_id=mass_test_003, as_of_date=2026-03-10`
+- Cost per decision (`mass_test_003`): **$0.002** ($0.039 / 20)
+- Reconciliation runtime: **IMPLEMENTED** (`accepted` / `updated` with human approval gate)
+
+### Capability Status (PRD SoT Reference)
+
+Status source-of-truth: `PRD.md` (private draft; `PRD_SOT_V1_START` block exported by CI into machine artifact).
+
+| capability_id | status |
+|---|---|
+| `paired_experiment_mode` | `IMPLEMENTED` |
+| `reconciliation_runtime` | `IMPLEMENTED` |
+| `staff_level_reasoning` | `IN_PROGRESS` |
+| `fpr_non_go_remediation_program` | `IN_PROGRESS` |
 
 ---
 
@@ -347,7 +360,7 @@ python3 scripts/build_batch_consolidated_report.py --batch-id executive_batch_00
 | 2 | KMS Master Key | `local_demo_key` allowed in sandbox — **emits warning at runtime** | Load from AWS KMS / HashiCorp Vault with rotation and audit controls |
 | 3 | Audit Integrity | `--integrity-required 0` available for legacy compat | Enforce `--integrity-required 1` in all release pipelines |
 | 4 | Reconciliation | Runtime worker implemented — `accepted` / `updated` paths with human approval gate | Monitor reconciliation match rate; add E2E integration test (P3 backlog) |
-| 5 | FPR calibration | 40% in PoC batch | Calibrate via Doctor prompt improvements to target <15% |
+| 5 | FPR calibration | 40% in PoC batch; release-candidate policy gate is active | Runtime remediation in Doctor/Commander remains in progress; target <15% |
 
 </details>
 

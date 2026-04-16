@@ -12,6 +12,8 @@ _ARCHIVE_TO_MOVE_OUT_*/**
 data/**
 reports/**
 human_reports/**
+RU_LOCAL_DOCS/**
+not_delete_historical_patterns/**
 
 # Security-sensitive map storage (never public)
 data/security/obfuscation_maps/**
