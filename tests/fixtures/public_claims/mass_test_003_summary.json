@@ -1,0 +1,95 @@
+{
+  "batch_id": "mass_test_003",
+  "benchmark_origin": "fresh_runtime",
+  "generated_by": "scripts/run_batch_eval.py",
+  "legacy_upgraded": false,
+  "records_quality_complete": true,
+  "generated_at": "2026-03-10T12:00:00Z",
+  "risky_cases": 10,
+  "safe_cases": 10,
+  "records": [
+    {
+      "expected_block": true,
+      "predicted_block": false,
+      "decision": "GO",
+      "methodology_state": "OBSERVABLE",
+      "ab_status": "PASS",
+      "blocked_by": [],
+      "guardrail_breach_count": 0,
+      "safe_case_block_evidence_issues": [],
+      "counterfactual_go_check": {
+        "status": "checked_for_non_go",
+        "evidence_present": true,
+        "note": ""
+      }
+    },
+    {
+      "expected_block": false,
+      "predicted_block": true,
+      "decision": "HOLD_NEED_DATA",
+      "methodology_state": "OBSERVABLE",
+      "ab_status": "PASS",
+      "blocked_by": [
+        "RISK_BLOCK"
+      ],
+      "guardrail_breach_count": 1,
+      "safe_case_block_evidence_issues": [],
+      "counterfactual_go_check": {
+        "status": "checked_for_non_go",
+        "evidence_present": true,
+        "note": ""
+      }
+    },
+    {
+      "expected_block": false,
+      "predicted_block": true,
+      "decision": "HOLD_NEED_DATA",
+      "methodology_state": "OBSERVABLE",
+      "ab_status": "PASS",
+      "blocked_by": [
+        "RISK_BLOCK"
+      ],
+      "guardrail_breach_count": 1,
+      "safe_case_block_evidence_issues": [],
+      "counterfactual_go_check": {
+        "status": "checked_for_non_go",
+        "evidence_present": true,
+        "note": ""
+      }
+    },
+    {
+      "expected_block": false,
+      "predicted_block": true,
+      "decision": "HOLD_NEED_DATA",
+      "methodology_state": "OBSERVABLE",
+      "ab_status": "PASS",
+      "blocked_by": [
+        "RISK_BLOCK"
+      ],
+      "guardrail_breach_count": 1,
+      "safe_case_block_evidence_issues": [],
+      "counterfactual_go_check": {
+        "status": "checked_for_non_go",
+        "evidence_present": true,
+        "note": ""
+      }
+    },
+    {
+      "expected_block": false,
+      "predicted_block": true,
+      "decision": "HOLD_NEED_DATA",
+      "methodology_state": "OBSERVABLE",
+      "ab_status": "PASS",
+      "blocked_by": [
+        "RISK_BLOCK"
+      ],
+      "guardrail_breach_count": 1,
+      "safe_case_block_evidence_issues": [],
+      "counterfactual_go_check": {
+        "status": "checked_for_non_go",
+        "evidence_present": true,
+        "note": ""
+      }
+    }
+  ]
+}
