@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_public_claims_consistency.py"
-PRD_PATH = Path(__file__).resolve().parents[1] / "PRD.md"
 
 
 def _write_sha256(path: Path) -> None:
@@ -139,29 +138,27 @@ class TestPublicClaimsConsistency(unittest.TestCase):
         evaluation_report: Path,
         scorecard: Path,
         strict_eval: int,
+        prd: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
-                "python3",
-                str(SCRIPT),
-                "--prd",
-                str(PRD_PATH),
-                "--prd-sot",
-                str(prd_sot),
-                "--readme",
-                str(readme),
-                "--agent-eval",
-                str(agent_eval),
-                "--evaluation-report",
-                str(evaluation_report),
-                "--scorecard",
-                str(scorecard),
-                "--strict-evaluation-report",
-                str(strict_eval),
-            ],
-            capture_output=True,
-            text=True,
-        )
+        cmd = [
+            "python3",
+            str(SCRIPT),
+            "--prd-sot",
+            str(prd_sot),
+            "--readme",
+            str(readme),
+            "--agent-eval",
+            str(agent_eval),
+            "--evaluation-report",
+            str(evaluation_report),
+            "--scorecard",
+            str(scorecard),
+            "--strict-evaluation-report",
+            str(strict_eval),
+        ]
+        if prd is not None:
+            cmd.extend(["--prd", str(prd)])
+        return subprocess.run(cmd, capture_output=True, text=True)
 
     def _run_batch_override(
         self,
@@ -408,6 +405,32 @@ class TestPublicClaimsConsistency(unittest.TestCase):
             )
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("PUBLIC_CLAIM_AS_OF_DATE_MISMATCH", proc.stdout)
+
+    def test_multi_benchmark_pass_even_if_prd_path_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            mass = root / "mass.json"
+            investor = root / "investor.json"
+            adv = root / "adv.json"
+            self._write_json_with_sidecar(mass, self._mass_summary())
+            self._write_json_with_sidecar(investor, self._investor_summary())
+            self._write_json_with_sidecar(adv, self._adversarial_summary())
+
+            prd_sot = self._make_prd_sot(root, mass, investor, adv)
+            readme, agent_eval, evaluation_report, scorecard = self._write_docs(root)
+            missing_prd = root / "MISSING_PRD.md"
+
+            proc = self._run(
+                prd=missing_prd,
+                prd_sot=prd_sot,
+                readme=readme,
+                agent_eval=agent_eval,
+                evaluation_report=evaluation_report,
+                scorecard=scorecard,
+                strict_eval=1,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+            self.assertIn("claim_consistency=PASS", proc.stdout)
 
     def test_batch_override_requires_freshness_and_integrity(self) -> None:
         with tempfile.TemporaryDirectory() as td:

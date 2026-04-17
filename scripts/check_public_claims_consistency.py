@@ -601,15 +601,11 @@ def main() -> None:
     parser.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
     args = parser.parse_args()
 
-    prd_path = _resolve(args.prd)
     prd_sot_path = _resolve(args.prd_sot)
     policy_path = _resolve(args.policy)
     using_batch_override = bool(args.batch_summary.strip())
 
     issues: list[str] = []
-
-    if (not using_batch_override) and (not prd_path.exists()):
-        issues.append(f"{ERR_SOURCE_MISSING}:prd:{prd_path}")
 
     policy, policy_source = _load_policy(policy_path)
     print(f"policy_source={policy_source}")
