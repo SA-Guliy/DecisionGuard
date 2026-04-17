@@ -107,10 +107,16 @@ class BatchRecordAndConsolidatedRegressionsTests(unittest.TestCase):
         batch_id = "unit_failed_record_batch"
         out_summary = ROOT / f"data/batch_eval/{batch_id}_summary.json"
         out_sidecar = Path(f"{out_summary}.sha256")
+        attempt_ledger = ROOT / f"data/batch_eval/{batch_id}_run_attempts.json"
+        attempt_ledger_sidecar = Path(f"{attempt_ledger}.sha256")
         if out_summary.exists():
             out_summary.unlink()
         if out_sidecar.exists():
             out_sidecar.unlink()
+        if attempt_ledger.exists():
+            attempt_ledger.unlink()
+        if attempt_ledger_sidecar.exists():
+            attempt_ledger_sidecar.unlink()
 
         fake_case = {"case_id": "case_001", "query": "q", "expected_block": False}
 
@@ -144,6 +150,8 @@ class BatchRecordAndConsolidatedRegressionsTests(unittest.TestCase):
 
         out_summary.unlink(missing_ok=True)
         out_sidecar.unlink(missing_ok=True)
+        attempt_ledger.unlink(missing_ok=True)
+        attempt_ledger_sidecar.unlink(missing_ok=True)
 
     def test_consolidated_groups_by_decision_buckets_and_contains_reasoning(self) -> None:
         with tempfile.TemporaryDirectory() as td:
