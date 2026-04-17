@@ -4,21 +4,27 @@ on:
   push:
     branches: [ "**" ]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 5 * * *"
+
+concurrency:
+  group: ci-governance-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  governance-checks:
+  fast-blocking:
+    name: fast-blocking
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-python-toolchain
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
 
       - name: Pre-commit workflow path verify (blocking)
         run: |
@@ -153,6 +159,28 @@ jobs:
             tests/test_executive_roi_report_v2.py \
             tests/test_reconciliation_worker_v2.py
 
+  governance-blocking:
+    name: governance-blocking
+    needs: fast-blocking
+    if: |
+      always() &&
+      needs.fast-blocking.result == 'success' &&
+      (
+        github.event_name == 'pull_request' ||
+        github.ref == 'refs/heads/main' ||
+        startsWith(github.ref, 'refs/heads/release-candidate/') ||
+        startsWith(github.ref, 'refs/tags/release-candidate-')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-python-toolchain
+        with:
+          python-version: "3.11"
+
       - name: Pipeline integration tests
         run: |
           python3 -m unittest \
@@ -209,7 +237,6 @@ jobs:
             sed 's/^/- policy(advisory): /' "$OUT"
             echo "- policy(advisory)_exit_code: ${STATUS}"
           } >> "$GITHUB_STEP_SUMMARY"
-          # Rollback rule (manual): if checker switch causes >2 consecutive false-red builds, revert CI checker wiring in one commit.
           exit "$STATUS"
 
       - name: Public status SoT consistency (advisory-if-available)
@@ -247,15 +274,6 @@ jobs:
             echo "release_quality_thresholds=SKIP (checker or policy missing)"
           fi
 
-      - name: Reasoning trace advisory mode (non-blocking)
-        run: |
-          echo "reasoning_trace_advisory_mode=non_blocking owner=@Dev_Analyst deadline=2026-05-15 ticket=RTA-001"
-          if [ -f tests/test_reasoning_trace_advisory.py ]; then
-            python3 -m unittest tests/test_reasoning_trace_advisory.py || true
-          else
-            echo "reasoning_trace_advisory_test=missing (non-blocking)"
-          fi
-
       - name: Validate publish control files
         run: |
           test -f PUBLISH_WHITELIST.txt
@@ -287,3 +305,73 @@ jobs:
             data/agent_quality/ci/public_claims_policy_advisory.log
             publish_audit_latest.json
             PUBLISH_AUDIT_CHECKLIST.md
+
+  heavy-audit:
+    name: heavy-audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-python-toolchain
+        with:
+          python-version: "3.11"
+
+      - name: Full governance regression (advisory)
+        run: |
+          python3 -m unittest \
+            tests/test_build_investor_demo_staging.py \
+            tests/test_blueprint_v21_runtime_enforcement.py \
+            tests/test_architecture_v3_runtime_contracts.py \
+            tests/test_batch_record_v2_consolidated_regressions.py \
+            tests/test_commander_hypothesis_review_v1.py \
+            tests/test_runtime_controls_and_acceptance_events.py \
+            tests/test_runtime_limits_enforcement.py \
+            tests/test_historical_retrieval_gate_v32.py \
+            tests/test_run_all_requires_experiment_id.py \
+            tests/test_experiment_duration_gate.py \
+            tests/test_anti_goodhart_requires_ab.py \
+            tests/test_stat_engine.py \
+            tests/test_reasoning_confidence.py \
+            tests/test_doctor_paired_stat_wiring.py \
+            tests/test_commander_guardrail_mandate.py \
+            tests/test_history_corpus_update.py \
+            tests/test_publish_corpus_lock.py \
+            tests/test_paired_status_enum_canonical.py \
+            tests/test_ctrl_foundation_allowlist_guard.py \
+            tests/test_paired_registry_path_normalization.py \
+            tests/test_paired_partial_antigoodhart_policy.py \
+            tests/test_paired_run_id_collision_policy.py \
+            tests/test_single_mode_unchanged.py \
+            tests/test_single_mode_no_paired_artifacts_required.py \
+            tests/test_real_kpi_ledger_logic.py \
+            tests/test_kpi_ledger_integrity_v2.py \
+            tests/test_poc_routing_and_fallback_reasoning.py \
+            tests/test_public_claims_consistency.py \
+            tests/test_run_batch_eval_network_blocked_fails_before_cases.py \
+            tests/test_executive_roi_report_v2.py \
+            tests/test_reconciliation_worker_v2.py \
+            tests/test_paired_partial_acceptance_flow.py \
+            tests/test_paired_partial_acceptance_e2e_pass.py
+
+      - name: Reasoning trace advisory mode (non-blocking)
+        run: |
+          echo "reasoning_trace_advisory_mode=non_blocking owner=@Dev_Analyst deadline=2026-05-15 ticket=RTA-001"
+          if [ -f tests/test_reasoning_trace_advisory.py ]; then
+            python3 -m unittest tests/test_reasoning_trace_advisory.py || true
+          else
+            echo "reasoning_trace_advisory_test=missing (non-blocking)"
+          fi
+
+      - name: Upload heavy audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heavy-audit-artifacts-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            data/acceptance/*.json
+            reports/L1_ops/**/ACCEPTANCE_REPORT.md
+            data/logs/*.log
