@@ -1,0 +1,32 @@
+{
+  "version": "batch_summary_v2.contract.v1",
+  "summary_version": "batch_summary_v2",
+  "required_top_level": [
+    "summary_version",
+    "batch_id",
+    "generated_at",
+    "completed_cases",
+    "failed_cases",
+    "failed_api_cases",
+    "safe_cases",
+    "risky_cases",
+    "false_negative_rate",
+    "fpr_non_go",
+    "fpr_stop_only",
+    "records"
+  ],
+  "required_record_fields": [
+    "run_id",
+    "case_id",
+    "expected_block",
+    "decision",
+    "predicted_block",
+    "hold_reason_code",
+    "safe_case_non_go_demotion_applied",
+    "demotion_reason_code",
+    "blocking_evidence_strength",
+    "stat_evidence_ref",
+    "top_matches",
+    "counterfactual_go_check"
+  ]
+}

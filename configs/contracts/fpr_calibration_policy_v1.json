@@ -1,0 +1,26 @@
+{
+  "version": "fpr_calibration_policy_v1",
+  "policy": {
+    "target_fpr_non_go": 0.15,
+    "max_allowed_fnr": 0.1,
+    "min_staff_reasoning_score": 0.85,
+    "min_cloud_path_completed_cases": 20,
+    "max_provisional_completed_cases": 0,
+    "max_rate_limit_errors": 2,
+    "model_cooldown_seconds": 900,
+    "release_candidate_reasoning_only_fallback": true,
+    "max_wave_attempts": 3,
+    "max_cloud_calls_per_wave": 300,
+    "max_allowed_wave_attempt_index": 3,
+    "enforce_rerun_fingerprint_guard": true,
+    "require_retry_budget_clean": true,
+    "require_cloud_preflight_artifact": true,
+    "require_fresh_runtime_origin": true,
+    "wave_batch_id_prefixes": [
+      "mass_tune_wave",
+      "calibration_wave"
+    ],
+    "required_waves": 3,
+    "stability_window": 2
+  }
+}
