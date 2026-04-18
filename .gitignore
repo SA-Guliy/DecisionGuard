@@ -99,3 +99,9 @@ IMPLEMENTATION_PLAN.md
 EVALUATION_REPORT.md
 data/poc/history_sot_v1.json
 data/poc/history_vector_index_v1.json
+
+# Private investor demo human reports (do not publish)
+examples/investor_demo/reports_for_humans/executive_roi_scorecard.md
+examples/investor_demo/reports_for_humans/executive_roi_scorecard.md.sha256
+examples/investor_demo/reports_for_humans/batch_consolidated_report.md
+examples/investor_demo/reports_for_humans/batch_consolidated_report.md.sha256
