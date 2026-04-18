@@ -1,140 +1,238 @@
-# Agent Evaluation Framework
+# DecisionGuard Agent Evaluation Framework
 
 ## Why This Document Exists
 
-Most AI agent projects ship without a measurement system.
-This document defines how DecisionGuard measures reasoning quality, not only output correctness.
+Most AI-agent evaluations focus on final correctness, not on reasoning quality that produced the output.
 
-The core belief is simple: a system that returns the right answer for the wrong reason will fail silently in production.
+This document defines how DecisionGuard evaluates reasoning quality, not only output correctness.
+
+Core principle: a system that is sometimes right for the wrong reason will silently degrade in production.
+
+> **Status:** project is in active development; the evaluation contour is still being hardened.
+> Public benchmark claims in this document are restricted by public-safe machine-checkable source policy.
+> Strong decision KPI alone do not prove that the staff-level reasoning gap is closed.
+
+---
 
 ## 1. Evaluation Philosophy
 
 A correct decision is not the same as correct reasoning.
 
-For LLM-based governance systems, outcome-only metrics (for example FPR/FNR) are necessary but not sufficient:
-- They do not show whether evidence was complete.
-- They do not show whether guardrails were actively enforced.
-- They do not show whether the same decision logic is stable across similar contexts.
+For LLM governance systems, outcome-only metrics such as FPR/FNR are not sufficient:
+- they do not prove evidence completeness;
+- they do not prove guardrail enforcement quality;
+- they do not prove reasoning stability across similar contexts;
+- they do not separate format discipline from semantic depth.
 
-Canonical metric definitions are fixed in [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md).
+Canonical metric definitions are in `METRICS_GLOSSARY.md`.
 
-DecisionGuard therefore evaluates the reasoning path itself, not only the final label.
-
-## 2. Reasoning Layer Model
-
-| Layer | What it measures | Why it matters |
-|---|---|---|
-| L1 - Live Primary Delta | Statistical evidence on primary metric between control and treatment | Prevents decisions driven by noise |
-| L2 - Live Guardrail Deltas | Per-metric guardrail breach detection with statistical context | Detects hidden degradations before rollout |
-| L3 - Historical Analog Patterns | Semantic similarity to prior experiments and outcomes | Grounds decisions in operational memory |
-
-A decision produced with all three layers active is held to a higher confidence standard than one built from historical context only.
-
-## 3. Scoring Dimensions
-
-### Dimension 1: Reasoning Layer Coverage
-- Which layers were active for this decision?
-- Was reasoning grounded in live statistical evidence?
-
-### Dimension 2: Statistical Grounding
-- Did the agent cite p-values and confidence intervals?
-- Were alternative hypotheses considered?
-
-### Dimension 3: Guardrail Sensitivity
-- Did the agent enumerate all guardrail metrics?
-- Were breaches treated as hard blockers, not soft suggestions?
-
-### Dimension 4: Decision Calibration
-- False Negative Rate: risky experiment approved when it should have been blocked.
-- False Positive Rate: safe experiment blocked when it should have been approved.
-
-### Dimension 5: Hypothesis Articulation
-- Were H0 and H1 stated explicitly?
-- Was the claim falsifiable?
-
-## 4. Staff-Level Reasoning Standard
-
-### What "Staff-Level Reasoning" Means Here
-
-Junior analyst reasoning: correct conclusion, missing explicit assumptions.
-
-Mid-level reasoning: conclusion plus primary metric evidence.
-
-Senior reasoning: conclusion plus evidence plus guardrail check.
-
-Staff-level reasoning: all of the above, plus:
-- Explicit H0/H1 and significance threshold.
-- Confidence intervals, not only point estimates.
-- Alternative explanations considered and ruled out.
-- Temporal dynamics (stable, decaying, or delayed effects).
-- Sensitivity analysis (what would change the decision).
-- Historical analog grounding with similarity score.
-
-DecisionGuard is built to this standard. The evaluation framework exists to measure the current gap and systematically close it.
-
-## 5. Evaluation Methodology
-
-Evaluation is performed as a repeatable process:
-- Adversarial test suite for fail-closed behavior.
-- Structured chain-of-thought template compliance checks.
-- Cross-run consistency scoring.
-- Human expert calibration baseline.
-
-## 7. Validation Results
-
-> Source: `investor_demo_batch_v2` · Backend: `groq/llama-3.3-70b` · 3 cases · Full artifacts: [`examples/investor_demo/`](examples/investor_demo/)
-
-### Portfolio Summary
-
-| Metric | Value |
-|---|---|
-| Total runs | 3 |
-| Cloud-path runs | 3 (100%) |
-| Final `GO` decisions | 1 |
-| Final `HOLD_NEED_DATA` decisions | 2 |
-| FNR (risky approved) | **0%** (0/2 risky) |
-| FPR (safe blocked) | **0%** (0/1 safe) |
-| Avg reasoning confidence | **0.77** |
-| Avg cost per run | **$0.0031** |
-
-### Per-Case Scoring
-
-| Case | Scenario | Paired Status | Layers Active | Decision | Confidence |
-|---|---|---|---|---|---|
-| `demo_case_001` | Dynamic bundling offers | `COMPLETE` | L1 + L2 + L3 | `GO` | 0.87 |
-| `demo_case_002` | Aggressive discount, slow-moving SKUs | `COMPLETE` | L1 + L2 + L3 | `HOLD_NEED_DATA` | 0.91 |
-| `demo_case_003` | Treatment arm failed mid-run | `TREATMENT_FAILED` | L3 only | `HOLD_NEED_DATA` | 0.54 |
-
-### Scoring Dimensions — Demo Suite Evidence
-
-**Dimension 1 — Reasoning Layer Coverage**
-
-Cases 001 and 002 ran with `paired_status=COMPLETE`: all three layers active (L1 live primary delta, L2 guardrail deltas, L3 historical). Case 003 had `TREATMENT_FAILED`: no live statistics available, L3 only, confidence correctly capped at 0.54 (policy ceiling: 0.60 for partial/failed runs).
-
-**Dimension 2 — Statistical Grounding**
-
-- Case 001: primary metric AOV `+6.2%` (`p=0.021`, 95% CI `[+0.94, +4.18]`); guardrail deltas cited with p-values (`fill_rate p=0.34`, `gp_margin p=0.19`) — not significant, decision `GO`.
-- Case 002: primary GMV `+4.1%` (`p=0.003`, 95% CI `[+1.4%, +6.8%]`); two guardrail breaches with p-values: `gp_margin 0.312→0.284` (`p=0.001`), `oos_lost_gmv_rate 0.041→0.067` (`p=0.008`) — decision `HOLD_NEED_DATA` despite positive primary signal.
-
-**Dimension 3 — Guardrail Sensitivity**
-
-Case 002 is the key test: primary metric was statistically significant and positive, yet the system issued `HOLD_NEED_DATA` because two guardrail metrics breached independently with high confidence. Guardrail breaches were treated as hard blockers, not soft suggestions. Case 003: incomplete treatment arm → hard governance ceiling regardless of primary metric value.
-
-**Dimension 4 — Decision Calibration**
-
-FNR = 0%: both risk cases (002, 003) were correctly held. FPR = 0%: the safe case (001) was correctly approved.
-
-**Dimension 5 — Hypothesis Articulation**
-
-Explicit H0/H1 formulation and sensitivity analysis are not yet present in agent outputs. This is the primary gap between current Senior-level reasoning and Staff-level standard. Infrastructure is built (stat engine, confidence policy); structured CoT template injection into agent prompts is the next sprint.
+DecisionGuard therefore evaluates reasoning-path, not only the final label.
 
 ---
 
-## 6. Implementation Status
+## 2. Benchmark and Public-Claim Context
 
-| Capability | Status |
+Public communication is split into two layers:
+
+- **canonical claims**: machine-checkable benchmark metrics tied to source-of-truth artifacts;
+- **curated deep-dive**: explanatory reasoning analysis on limited demo scope.
+
+This distinction is required so explanatory sections do not override canonical benchmark claims.
+
+---
+
+## 3. Reasoning Layer Model
+
+| Layer | What it measures | Why it matters |
+|---|---|---|
+| **L1 — Live Primary Delta** | Statistical evidence for primary metric between control and treatment | Prevents decisions on noise |
+| **L2 — Live Guardrail Deltas** | Guardrail-breach detection with statistical context | Detects hidden degradations before rollout |
+| **L3 — Historical Analog Patterns** | Similarity to relevant historical precedents and outcomes | Adds operational memory to current decision |
+
+A decision with all three layers active should be held to a stricter confidence standard than one based on historical context only.
+
+---
+
+## 4. Scoring Dimensions
+
+### Dimension 1 — Reasoning Layer Coverage
+- Which reasoning layers were active?
+- Was reasoning grounded in live statistical evidence?
+
+### Dimension 2 — Statistical Grounding
+- Did the agent cite p-values and confidence intervals?
+- Were alternative explanations considered?
+
+### Dimension 3 — Guardrail Sensitivity
+- Were relevant guardrail metrics explicitly covered?
+- Were breaches treated as hard blockers instead of soft recommendations?
+
+### Dimension 4 — Decision Calibration
+- False Negative Rate: risky experiment approved by mistake.
+- False Positive Rate: safe experiment blocked by mistake.
+
+### Dimension 5 — Hypothesis Articulation
+- Are H0/H1 explicitly defined?
+- Is the claim falsifiable?
+
+### Dimension 6 — Format Compliance
+- Are required reasoning fields populated?
+- Are evidence links verifiable?
+- Are required schema/contract fields respected?
+
+### Dimension 7 — Semantic Depth
+- Is reasoning tied to case-specific evidence instead of universal templates?
+- Are counterfactual and uncertainty blocks concrete?
+- Is it explicit what would change the decision and why?
+
+---
+
+## 5. Staff-Level Reasoning Standard
+
+### What Staff-Level Reasoning Means Here
+
+**Junior-level reasoning:** correct conclusion, hidden assumptions not explicit.
+
+**Mid-level reasoning:** conclusion plus primary-metric evidence.
+
+**Senior-level reasoning:** conclusion plus evidence plus guardrail-check.
+
+**Staff-level reasoning:** all above, plus:
+- explicit H0/H1 and significance threshold;
+- confidence intervals, not only point estimates;
+- alternative explanations considered and rejected;
+- time-dynamics considered;
+- sensitivity analysis;
+- historical analog grounding;
+- case-specific evidence linkage without template dependence.
+
+DecisionGuard targets this standard. The framework is used to measure and close the gap systematically.
+
+---
+
+## 6. Evaluation Methodology
+
+Evaluation runs as a repeatable process:
+- adversarial test suite for fail-closed behavior;
+- structured reasoning schema compliance checks;
+- cross-run consistency scoring;
+- calibration against human expert baseline.
+
+---
+
+## 7. Current Evaluation-Contour Updates (2026)
+
+### 7.1 Outcome Quality and Semantic Depth Are Split
+
+In the internal evaluation contour, scoring is split into:
+- decision outcome quality;
+- structural reasoning correctness;
+- semantic reasoning depth.
+
+This lowers the risk of formal pass-through based only on template-friendly formatting.
+
+### 7.2 Depth-Aware Release Checker
+
+In the internal release-checker contour, gating uses not only decision KPI but also depth-aware reasoning signals.
+
+Strong FPR/FNR alone does not imply staff-level reasoning quality.
+
+### 7.3 Anti-Gaming Hardening
+
+Internal reasoning checks require both format correctness and verifiable evidence linkage:
+- either a valid link to a corresponding evidence artifact;
+- or confirmed structured historical context.
+
+This reduces risk of inflated scores from templated reasoning fields.
+
+### 7.4 CI and Evaluation Contour
+
+Public blocking CI covers baseline critical evaluation checks.
+
+Full regression/evaluation contour still runs via a separate protocol, not as a single minimal CI pass.
+
+### 7.5 Release-Candidate Restrictions
+
+The internal release-candidate contour enforces additional policy constraints for fallback behavior and runtime artifact provenance.
+
+This keeps release sign-off stricter than exploratory runtime.
+
+### 7.6 Score Interpretation Rule
+
+Growth in governance/staff reasoning score is not equivalent to pure model intelligence growth.
+
+The number is influenced by:
+- updated rubric and scoring scale;
+- stricter/more structured reasoning format;
+- reduced technical-default and fallback noise;
+- possible partial score gains from template-style inputs.
+
+Correct external framing:
+
+> **On the current synthetic benchmark, governance score and decision stability improved significantly.**
+> **Semantic depth reasoning continues to be strengthened in a separate depth-aware contour and should not be over-interpreted from aggregate score alone.**
+
+---
+
+## 8. Public-Safe Canonical Claims Policy
+
+In the public repository, canonical benchmark claims are published only if all conditions hold:
+
+- source artifact is tracked in git;
+- source artifact has valid `.sha256` sidecar;
+- claim passes CI consistency checks;
+- source artifact is outside private deny/ignore zones.
+
+Current public status for this document:
+
+- detailed machine-checkable benchmark metrics are **not published here**;
+- detailed benchmark summaries and deep-dive sources are maintained in internal contour;
+- public SoT for demo artifact layout is `examples/investor_demo/DEMO_GUIDE.md`.
+
+This is an intentional public-safe and privacy constraint, not a refusal to measure KPI internally.
+
+---
+
+## 9. Curated Deep-Dive Policy (Public-Safe)
+
+Curated deep-dive is used for qualitative reasoning analysis, but in public-safe mode:
+
+- case-level internal artifacts are not published;
+- private human reports and internal benchmark summaries are not published;
+- metrics that cannot be independently verified via tracked public source paths are not published.
+
+What remains public:
+
+- reasoning evaluation methodology;
+- score interpretation rules;
+- outcome-quality vs semantic-depth separation;
+- evidence-link and anti-gaming requirements.
+
+This prevents mismatch between public claims and actual public source availability.
+
+---
+
+## 10. Implementation Status (Public-Safe View)
+
+| Capability | Public status |
 |---|---|
-| Live `StatEvidenceBundle` injected into Doctor and Commander contexts | Implemented |
-| Dynamic `reasoning_confidence` replacing hardcoded constant | Implemented |
-| Per-metric statistical method selection (Welch / Delta Method / Bootstrap) | Implemented |
-| Automated evaluation pipeline with regression detection | Planned |
+| Statistical runtime core (`src/stat_engine.py`, `src/reasoning_confidence.py`) | Publicly tracked |
+| Retrieval runtime foundation (`src/retrieval_runtime.py`) | Publicly tracked |
+| A2/A3 depth-scoring contour and depth-aware release checker | Internal contour (not fully published in tracked public set) |
+| Automated full evaluation pipeline with regression detection | Planned / In Progress |
+
+---
+
+## 11. Capability Status (PRD SoT)
+
+Status source: `PRD.md` (private draft; `PRD_SOT_V1_START` block is exported by CI into machine artifact).
+Publicly, these statuses are governance declarations and can require internal artifacts for full independent verification.
+
+| capability_id | status |
+|---|---|
+| `paired_experiment_mode` | `IMPLEMENTED` |
+| `reconciliation_runtime` | `IMPLEMENTED` |
+| `staff_level_reasoning` | `IN_PROGRESS` |
+| `fpr_non_go_remediation_program` | `IN_PROGRESS` |
+
+Release-candidate policy gating for high `fpr_non_go` remains active in acceptance; runtime remediation to reduce false positives is still in progress.

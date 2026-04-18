@@ -1,306 +1,368 @@
 # DecisionGuard
 
-> Multi-agent governance framework protecting product decisions from toxic metrics and Goodhart's Law via deterministic LLM guardrails.
+> AI-native runtime for product experimentation and governance: from hypothesis and test launch to result interpretation and final rollout decision.
 
 [![CI](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml/badge.svg)](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-311/)
 [![License: All Rights Reserved](https://img.shields.io/badge/license-All_Rights_Reserved-lightgrey.svg)]()
-[![Tests](https://img.shields.io/badge/tests-123_passing-brightgreen.svg)]()
-[![Secrets: 0](https://img.shields.io/badge/hardcoded_secrets-0-brightgreen.svg)]()
+[![Status](https://img.shields.io/badge/status-active_development-orange.svg)]()
 
 ---
 
-<!-- Demo GIF: replace the block below with your recorded scenario -->
-> **Demo scenario:** Flash discount experiment scores +15% conversion locally →
-> system surfaces historical precedent (GP margin −12.5%, fill-rate −24%) →
-> verdict: `HOLD_NEED_DATA` with cited evidence. Cost: $0.002. Latency: 888ms.
+> **Project status**
 >
-> *[GIF coming — demo recording in progress]*
+> DecisionGuard is **not finished** and is in **active development**.
+> The public repository shows architecture, PoC results, core engineering choices, and the system direction, while part of the capabilities is still being calibrated, hardened, and validated.
+>
+> The most accurate framing today is: a **strong R&D / PoC runtime** with working governance logic, synthetic evaluation, and fail-closed orchestration, but not yet a finalized production product.
 
 ---
 
-## Table of Contents
+## Contents
 
 - [What It Is](#what-it-is)
-- [Why It Exists](#why-it-exists)
+- [Why It Matters](#why-it-matters)
+- [Who Benefits and Where](#who-benefits-and-where)
 - [How It Works](#how-it-works)
-- [Evidence-Grounded Decisions (RAG)](#evidence-grounded-decisions)
+- [Evidence-Grounded Decisions](#evidence-grounded-decisions)
 - [Paired Experiment Mode](#paired-experiment-mode)
-- [PoC Results](#poc-results-mass_test_003--20-cases-darkstore-domain)
+- [PoC Results](#poc-results)
+- [What Is Being Improved Now](#what-is-being-improved-now)
+- [Synthetic Evaluation Environment](#synthetic-evaluation-environment)
 - [Engineering Depth](#engineering-depth)
-- [Key Design Decisions](#key-design-decisions)
-- [Provisional Decision Flow](#provisional-decision-flow)
-- [Synthetic Simulation Engine](#synthetic-simulation-engine)
-- [System Boundaries & Assumptions](#system-boundaries--assumptions)
-- [Compared To](#compared-to)
+- [Key Architectural Choices](#key-architectural-choices)
+- [System Boundaries and Current Limits](#system-boundaries-and-current-limits)
+- [Comparison](#comparison)
 - [Quick Start](#quick-start)
-- [Security & Tech Debt](#security--tech-debt-path-to-production)
-- [Repository Layout](#repository-layout)
-- [Investor Demo Assets](#investor-demo-assets)
-- [GitHub Release Packaging](#github-release-packaging-staging_only)
+- [Security and Path to Production](#security-and-path-to-production)
+- [Repository Structure](#repository-structure)
+- [Demo Artifacts](#demo-artifacts)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
 ## What It Is
 
-**DecisionGuard** is an AI-Driven A/B Test Governance Layer — not an experimentation platform, but a policy-enforcement layer on top of one.
+**DecisionGuard** is an AI-native runtime for experimentation governance.
 
-It is built for businesses where a statistically "successful" A/B test can still damage real P&L through delayed side effects: margin erosion, fulfillment stress, customer churn, or support spikes.
+It supports the full decision lifecycle:
 
-The runtime runs a deterministic multi-agent chain — **Captain → Doctor → Commander** — against every experiment before rollout approval. Each agent has a specific role, bounded by machine-readable domain contracts. No hardcoded business logic. No silent pass-throughs.
+- prepare and validate input data;
+- draft and refine a hypothesis;
+- run a prelaunch governance audit;
+- run an A/B experiment;
+- interpret outcomes with guardrails, historical precedents, and risk context;
+- produce a fail-closed rollout decision.
+
+DecisionGuard can:
+
+- sit on top of an existing experimentation stack;
+- own part of the lifecycle in a more autonomous AI-driven contour;
+- increase decision quality for analysts, PMs, and experimentation teams.
+
+Core value is not only test execution, but **decision quality governance before, during, and after the experiment**.
 
 ---
 
-## Why It Exists
+## Why It Matters
 
-Standard A/B testing tools answer: _"Did this variant win?"_
-DecisionGuard answers: _"Is it safe to ship, given all guardrails, unit economics, and risk context?"_
+Classic experimentation tooling answers:
 
-A variant with +8% AOV that quietly erodes fill rate below threshold is a NO-GO. The system catches that, documents why, and keeps the business moving via provisional fallback — without blocking the pipeline.
+_"Did the variant win?"_
+
+DecisionGuard answers the more expensive business question:
+
+_"Is this decision truly justified and safe under guardrails, data quality, historical patterns, operational constraints, and risk context?"_
+
+A local lift in the primary metric is not enough for rollout.
+
+The most expensive mistakes usually happen when:
+
+- primary metric grows while decision quality drops;
+- short-term wins hide guardrail downside;
+- rollout looks statistically successful but is operationally or economically risky;
+- interpretation is rushed and not systematically checked.
+
+DecisionGuard is designed for exactly these cases.
+
+---
+
+## Who Benefits and Where
+
+DecisionGuard is useful beyond experimentation teams.
+
+It helps:
+
+- **analysts**: formulate/refine hypotheses, interpret outcomes deeper, and detect hidden downside behind local wins;
+- **product managers**: quickly see whether a decision is protected by metrics, guardrails, and downstream risk checks;
+- **growth / experimentation teams**: reduce false rollout cost and make decisions more reproducible and auditable;
+- **organizations with high decision quality standards**: where uplift alone is not enough and mechanism + risk need to be understood.
+
+DecisionGuard is **domain-agnostic**.
+
+The architecture relies on policy contracts, evidence-driven reasoning, fail-closed gates, and synthetic evaluation, so it can be adapted to different verticals and experimentation programs.
 
 ---
 
 ## How It Works
 
+DecisionGuard follows governance state-machine `S1 → S2 → S3 → S4 → S5`:
+
+- **S1 Data Hygiene (Agent-1)**: input quality, integrity, context completeness, and launch preconditions;
+- **S2 Hypothesis Draft (Agent-2)**: hypothesis, expected effect logic, risk framing, interpretation conditions;
+- **S3 Prelaunch Audit (Agent-3)**: launch-readiness audit of design, guardrails, and risks;
+- **S4 Experiment Run**: execution and signal collection;
+- **S5 Final Governance (Agent-3)**: final interpretation and rollout verdict.
+
+Simplified flow:
+
 ```mermaid
 flowchart TD
-    A([Experiment Hypothesis<br/>+ Metrics + Context]) --> B[Contract & Data<br/>Quality Gates]
-    B --> C[Captain<br/>Sanity & Realism Check]
-    C --> D[Doctor<br/>Hypothesis Review]
-    D --> E[Commander<br/>Final Governance Decision]
-    E --> F([Decision Card<br/>+ ROI Scorecard])
+    A([Experiment context<br/>metrics + hypothesis + constraints]) --> B[S1 Agent-1<br/>Data Hygiene]
+    B --> C[S2 Agent-2<br/>Hypothesis Draft]
+    C --> D[S3 Agent-3<br/>Prelaunch Audit]
+    D --> E[S4 Experiment Run]
+    E --> F[S5 Agent-3<br/>Final Governance]
+    F --> G([Decision Card<br/>+ ROI / Risk Summary])
 
     style A fill:#f0f4ff,stroke:#6b7cff
-    style F fill:#f0fff4,stroke:#38a169
+    style G fill:#f0fff4,stroke:#38a169
+    style B fill:#fff8f0,stroke:#e07b00
     style C fill:#fff8f0,stroke:#e07b00
     style D fill:#fff8f0,stroke:#e07b00
-    style E fill:#fff8f0,stroke:#e07b00
+    style F fill:#fff8f0,stroke:#e07b00
 ```
 
-Each agent call passes through two cross-cutting layers:
+Every call passes common control layers:
 
-| Layer | Trigger | What it does |
-|-------|---------|-------------|
-| **Privacy** | Every cloud LLM call | Replaces sensitive values with vectorized placeholders before sending; reverses mapping on response. AES-256-CBC encrypted obfuscation map, never persisted in plaintext |
-| **Resilience** | Every agent call | Groq → Ollama → Deterministic local. Fallback result tagged `[PROVISIONAL]`, flagged for cloud reconciliation on recovery |
-| **Integrity** | Every artifact read/write | SHA256 sidecar on every file. Tamper or missing sidecar = immediate `FAIL` |
-| **Audit** | Every cloud call | Append-only `audit_log.jsonl` with `run_id`, `policy_ref`, `model`, `timestamp` |
-
-Technical deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+| Layer | What it does |
+|------|---------------|
+| **Privacy** | Sanitizes sensitive values before cloud LLM calls and restores only inside controlled runtime |
+| **Resilience** | Supports fallback chain Groq → Ollama → deterministic local; release-candidate mode applies stricter policy constraints and cloud-preflight requirements |
+| **Integrity** | Verifies artifact integrity and fails closed on tamper / missing sidecar |
+| **Audit** | Writes audit trail for run, policy, backend, time, cost, and final status |
 
 ---
 
 ## Evidence-Grounded Decisions
 
-Most governance tools block based on current metrics or static rules. DecisionGuard grounds every decision in **historical experiment outcomes** via a semantic retrieval layer.
+DecisionGuard does not rely only on current-run metrics.
 
-Before Commander issues a verdict, Doctor queries the experiment history:
+Before final verdict, it pulls **historical precedents** through retrieval and uses them as additional evidence.
 
-```
-Query: "flash discounts on high-margin SKUs"
-Match: exp_hist_001 (similarity: 0.23)
-  → treatment GP margin: 0.161 vs control: 0.184 (−12.5%)
-  → breach: "Margin diluted by aggressive discounts"
-  → prior decision: STOP_ROLLOUT
-```
+Benefits:
 
-This creates a **compounding flywheel**: every experiment that runs through the system makes the next decision smarter. Historical evidence is cited by ID in every decision card — no hallucination, no speculation.
+- decision is not based on one current snapshot;
+- similar past experiments become part of reasoning;
+- final decision card can cite evidence rather than generic language;
+- lower risk of speculative or hallucinated interpretation.
+
+So the system answers not only "what happened now", but also "how this outcome aligns with already observed risk/success patterns".
 
 ---
 
 ## Paired Experiment Mode
 
-Standard A/B governance tools evaluate an experiment as a single snapshot. DecisionGuard introduces **paired experiment mode**: control and treatment branches run under the same experiment ID, and the system automatically computes the live delta between them before any agent reasons about the outcome.
+DecisionGuard supports **paired experiment mode**: control and treatment run under one experiment ID, and live deltas are computed before final reasoning.
 
-This unlocks three layers of reasoning that compound on each other:
+The system reasons on three evidence layers together:
 
-| Layer | What it provides | Without paired mode |
-|-------|-----------------|---------------------|
-| **Layer 1 — Live primary metric** | Actual treatment vs control delta with p-value and confidence interval | Not available |
-| **Layer 2 — Live guardrail metrics** | Statistical breach detection across all guardrails simultaneously | Not available |
-| **Layer 3 — Historical patterns** | Semantic retrieval of past experiments with similar mechanics | Always active |
+1. **Live primary metric**: treatment vs control delta;
+2. **Live guardrail metrics**: protective metric breaches;
+3. **Historical patterns**: retrieved similar scenarios.
 
-When all three layers are present, agents can reason like a senior analyst: *"Primary metric improved significantly (p=0.032), but margin guardrail breached with high confidence (p=0.001) — consistent with the pattern from exp_hist_001 where the same mechanism caused −12.5% GP margin erosion."*
+This enables governance-style reasoning instead of single-metric checks.
 
-**Governance safety in partial runs:** if the treatment branch fails mid-run, the system does not produce a false verdict. The run is sealed as `PARTIAL`, the decision ceiling is forced to `HOLD_NEED_DATA`, and the result is audit-logged — it cannot accidentally propagate as a `GO`.
+If treatment fails or data is incomplete, system does not emit false `GO`.
+The decision ceiling is forced to `HOLD_NEED_DATA` (or equivalent fail-closed status).
 
 ---
 
-## PoC Results (Benchmark-Scoped)
+## PoC Results
 
-Canonical metric definitions (FNR/FPR): [`METRICS_GLOSSARY.md`](METRICS_GLOSSARY.md)  
-Public benchmark registry SoT: `PRD.md` (private draft; `PRD_SOT_V1_START` block exported by CI into machine artifact).
+### What Is Already Demonstrated
 
-### Results by Benchmark
+Current PoC already demonstrates:
 
-| Benchmark | Scope | FNR (risky approved) | FPR (safe blocked, non-GO) | FPR stop-only | Source |
-|---|---|---|---|---|---|
-| `mass_test_003` | 20 cases (10 risky, 10 safe) | FNR risky approved = **10% (1/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | FPR safe blocked = **40% (4/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | **0% (0/10)** `benchmark_id=mass_test_003, as_of_date=2026-03-10` | `examples/investor_demo/reports_for_agents/mass_test_003_summary.json` |
-| `investor_demo_batch_v2` | 3 curated cases (2 risky, 1 safe) | FNR risky approved = **0% (0/2)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | FPR safe blocked = **0% (0/1)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | **0% (0/1)** `benchmark_id=investor_demo_batch_v2, as_of_date=2026-03-20` | `examples/investor_demo/reports_for_agents/batch_summary.json` |
-| `adversarial_suite_v1` | 5 risky scenarios | FNR risky approved = **0% (0/5)** `benchmark_id=adversarial_suite_v1, as_of_date=2026-02-27` | N/A (no safe denominator) | N/A | `data/eval/adversarial_suite_v13_agent_prod_013.json` |
+- working governance flow;
+- synthetic benchmark evaluation;
+- fail-closed decisioning;
+- historical evidence retrieval;
+- paired experiment logic;
+- auditability and fallback resilience.
 
-Explicit denominator note for risk-only benchmark:
-- FPR safe blocked = N/A, `benchmark_id=adversarial_suite_v1, as_of_date=2026-02-27` (no safe denominator).
+### Decision KPI
 
-Additional operational metrics:
-- Availability (`mass_test_003`): **100%**, `benchmark_id=mass_test_003, as_of_date=2026-03-10`
-- Cost per decision (`mass_test_003`): **$0.002** ($0.039 / 20)
-- Reconciliation runtime: **IMPLEMENTED** (`accepted` / `updated` with human approval gate)
+On current benchmark waves, DecisionGuard shows strong **decision KPI** stability.
+These numbers must be interpreted **separately** from semantic depth gates and reasoning-quality sign-off.
 
-### Capability Status (PRD SoT Reference)
+| Wave set | Gate contract | FPR_non_go | FNR |
+|---|---|---|---|
+| `A5 / B5 / C5` | `release-candidate (pre-depth sign-off)` | `0.10 / 0.10 / 0.00` | `0.00 / 0.00 / 0.00` |
 
-Status source-of-truth: `PRD.md` (private draft; `PRD_SOT_V1_START` block exported by CI into machine artifact).
+> Historical baseline and full contract migration are tracked in `RU_LOCAL_DOCS/EXECUTION_TRACKER_RU.md` and freeze artifacts, to avoid publishing unverified comparisons in README.
 
-| capability_id | status |
-|---|---|
-| `paired_experiment_mode` | `IMPLEMENTED` |
-| `reconciliation_runtime` | `IMPLEMENTED` |
-| `staff_level_reasoning` | `IN_PROGRESS` |
-| `fpr_non_go_remediation_program` | `IN_PROGRESS` |
+How to read this correctly:
+
+- decision chain shows strong safety/stability improvement on legacy benchmark waves;
+- this does **not** automatically mean semantic depth gate is closed;
+- decision KPI and reasoning depth are **two different signals**, not a single “release-ready score”.
+
+Correct public interpretation:
+
+> **Decision KPI are already strong on the current synthetic benchmark, while semantic depth reasoning and depth-aware sign-off are still being strengthened as a separate track.**
+
+### What to Keep in Mind About Reasoning Score
+
+Average `staff_reasoning_score` increased significantly versus older `system.reasoning_quality_score`.
+
+But this must **not** be interpreted as pure "model intelligence growth".
+
+The result is influenced by multiple factors:
+
+- new rubric and scale;
+- more structured reasoning format;
+- partial template-like fields in some reasoning outputs;
+- reduced effect of technical defaults and fallback noise that are not direct reasoning depth.
+
+So the accurate external wording is:
+
+> **DecisionGuard materially improved governance score and decision stability on current synthetic benchmark; semantic reasoning depth strengthening remains in progress.**
+
+---
+
+## What Is Being Improved Now
+
+Current focus is not only score growth, but making depth evaluation more robust against templating and formal pass-through.
+
+In progress:
+
+- separate scoring for **Agent-2** and **Agent-3**;
+- higher weight on **semantic depth** (not only format compliance);
+- split score into:
+  - `FormatScore`
+  - `SemanticDepthScore`
+- shift decision gates to semantic criteria;
+- anti-template constraints;
+- mandatory case-specific evidence linkage;
+- human blind-audit on random samples;
+- drift checks between auto-score and human-score.
+
+Target direction:
+
+- **A2_HypothesisDepthScore** for hypothesis quality and analysis logic;
+- **A3_GovernanceDepthScore** for final governance depth;
+- stronger weighting of final semantic depth over superficial structure.
+
+---
+
+## Synthetic Evaluation Environment
+
+DecisionGuard uses a **dynamic synthetic data environment** for realistic evaluation.
+
+This is not a static fixture set.
+
+The simulator models changing conditions where outcomes are affected by:
+
+- user behavior and segmentation;
+- churn/reactivation;
+- demand spikes and drops;
+- competitor pressure;
+- supply constraints;
+- operational noise;
+- delayed effects hidden in short A/B windows.
+
+This is needed to validate not only "which variant won", but whether decisions remain robust, realistic, and safe under harder context.
+
+Publicly, we expose the high-level design: synthetic evaluation engine generates `safe / risky / borderline` scenarios and stress-tests the agent chain in near-realistic conditions.
+
+Part of simulator mechanics, environment parameterization, and domain specifics intentionally stays private.
 
 ---
 
 ## Engineering Depth
 
-| Layer | What's There |
-|-------|-------------|
-| **Contract set** | 55 machine-readable policy contracts · 30 typed error codes · 13 mandatory gate stages · paired experiment lifecycle contracts |
-| **Test suite** | 123 passing tests · adversarial scenario suite · tamper detection · end-to-end subprocess tests · cloud gateway tests with fake backend |
-| **Security** | AES-256-CBC + PBKDF2 · KMS envelope (data key ≠ master key) · roundtrip decrypt verification · ACL on obfuscation map reads · append-only audit JSONL · zero hardcoded secrets |
-| **Observability** | Per-call: model + backend + tokens + latency + cost · Per-run: gate results with `blocked_by[]` + `required_actions[]` · Immutable audit trail |
-| **Model policy** | Captain: `llama-3.1-8b-instant` · Doctor: `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b` → `openai/gpt-oss-20b` · Commander: `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b` · Local: `gemma3:1b` (Ollama) · Doctor and Commander guaranteed 2+ reasoning tiers before non-reasoning fallback |
-| **Event bus** | 23 topic schemas · topic registry with schema refs · no anonymous payloads |
-| **LOC** | 45K+ · 0 hardcoded secrets · 0 TODO/FIXME · full type hints |
+| Layer | Implemented |
+|------|-------------|
+| **Policy-as-Code** | Machine-readable policy contracts, domain templates, externalized guardrail and decision logic |
+| **Fail-Closed Runtime** | No silent pass-through: missing data, integrity gaps, and policy violations block false `GO` |
+| **Security** | Sanitization before cloud calls, encryption for sanitization maps, audit trail, access control |
+| **Resilience** | Fallback chain and controlled reconciliation after cloud recovery |
+| **Observability** | Backend, latency, token usage, estimated cost, run status, blocked-by logging |
+| **Evaluation** | Unit, integration, adversarial, and e2e; blocking CI currently covers core governance checks, contract integrity, and smoke checks; full regression/eval contour runs separately |
+| **Evidence Layer** | Historical retrieval and evidence-grounded reasoning instead of isolated interpretation |
+| **Synthetic Evaluation** | Dynamic scenario generator for complex chain-level evaluation |
 
 ---
 
-## Key Design Decisions
+## Key Architectural Choices
 
-- **Policy-as-Code**: `domain_template.json` drives all decisions — zero business logic in Python. 13 metrics, 3 goals, 4 guardrails, breach actions — all externalized to JSON, hot-swappable without code change
-- **Fail-Closed**: missing data, integrity gap, or policy violation → `HOLD_NEED_DATA`, not silent pass. 13 mandatory gate stages, enforced in sequence by V3 contract set (16 contracts, 21 required error codes)
-- **Experiment Governance**: every run requires an experiment ID — no anonymous executions. Aggressive final decisions (`GO/RUN_AB/ROLLOUT_CANDIDATE`) are blocked until minimum 14-day evidence coverage for that experiment ID. Missing ID = fail-closed, not silent skip
-- **Paired Experiment Mode**: control and treatment run under the same experiment ID; live statistical deltas (p-value, CI) are computed per metric and fed directly into agent reasoning alongside historical patterns — three evidence layers compound for every decision
-- **Integrity-First**: every artifact has a SHA256 sidecar (`.sha256`). Tamper = fail. Manifests track full file hash chains across runs
-- **Privacy-First**: AES-256-CBC + PBKDF2 KMS envelope with data key separation. Sensitive values are obfuscated before any LLM call via vectorized placeholder mapping; local obfuscation map is encrypted with roundtrip-verified decrypt before storage. Cloud LLM never sees raw data
-- **Runtime Resilience**: Groq → Ollama → Deterministic local, with `provisional` tagging and cloud reconciliation on recovery (see [Provisional Decision Flow](#provisional-decision-flow))
-- **Reasoning Continuity**: Doctor and Commander maintain 2 reasoning-capable model tiers before falling to a non-reasoning fallback. Known decommissioned models are filtered pre-call (no latency cost); unknown failures are caught at runtime and the next tier is selected automatically. Updating the chain requires changing one file: `src/model_policy.py`
-- **Evidence-Grounded**: every decision cites historical precedents with similarity scores — grounded in your own experiment history, not LLM speculation
-- **Full Observability**: every LLM call records `model`, `backend`, `prompt_tokens`, `completion_tokens`, `latency_ms`, `cost_usd_estimate`, and `fallback_reason`. 23 event bus topics with named schemas — no anonymous payloads
-- **Replaceable-by-Python test**: each agent is evaluated on whether LLM reasoning adds measurable value beyond deterministic logic
+- **AI-native experimentation + governance**: system participates in hypothesis draft, prelaunch audit, and final governance.
+- **Policy-as-Code**: critical business logic is not buried in ad-hoc if/else chains.
+- **Fail-Closed by Default**: incomplete context or integrity/policy issues move decision to hold-path, not optimistic pass.
+- **Evidence-Grounded Decisions**: reasoning must cite concrete signals, not generic text.
+- **Replaceable-by-Python Mindset**: LLM layer must show measurable added value over deterministic logic.
+- **Runtime Resilience**: controlled degraded mode under external failures, instead of total stop.
+- **Auditability**: decisions, interim states, and block reasons are post-factum verifiable.
+- **Synthetic-First Evaluation**: difficult risky/safe/borderline scenarios are tested beyond static hand-made fixtures.
 
 ---
 
-## Provisional Decision Flow
+## System Boundaries and Current Limits
 
-When the cloud LLM API (Groq) is unavailable, the system does not stop. It follows a defined fallback and reconciliation sequence:
+Read the current state honestly.
 
-```
-Cloud API unavailable
-        ↓
-Edge LLM (Ollama) → if also unavailable → Deterministic local fallback
-        ↓
-Decision produced and marked:
-  [PROVISIONAL - LOCAL EDGE FALLBACK]
-  needs_cloud_reconciliation = true
-        ↓
-Decision artifact written and returned to operator
-        ↓
-Cloud API recovers
-        ↓
-Reconciliation worker re-runs the same case against cloud LLM
-        ↓
-  ┌─ Cloud agrees with provisional → status: ACCEPTED, artifact sealed
-  └─ Cloud produces different decision → status: UPDATED, artifact replaced with cloud version
-```
+At this stage:
 
-**Fully implemented:**
-- Fallback chain: Groq → Ollama → Deterministic local ✅
-- Provisional tagging (`[PROVISIONAL]` label, `needs_cloud_reconciliation=true`) ✅
-- Reconciliation metadata written to run artifacts ✅
-- Reconciliation worker: automatic re-run against cloud LLM on recovery ✅
-- Accept/Update logic: cloud agrees → `ACCEPTED`, differs → `UPDATED` with delta logged ✅
-- **Human-in-the-Loop**: `human_approval_required=true` is set on every `UPDATED` artifact — cloud override never auto-applies without operator sign-off ✅
-- **Anti-loop guard**: worker rejects a cloud result that is itself `[PROVISIONAL]` — cloud ground truth must be a real cloud response ✅
+- project is **not finished**;
+- reasoning evaluation is **still being refined**;
+- part of high score can come from formatting/rubric alignment, not only deeper reasoning;
+- part of calibration work is still in progress;
+- public repository does not claim completed real-world production validation;
+- synthetic benchmark is already useful for chain validation, but does not replace full real-world validation.
+
+Current correct positioning:
+
+> **A strong AI experimentation/governance PoC with deep engineering and active semantic reasoning quality hardening.**
 
 ---
 
-## Synthetic Simulation Engine
+## Comparison
 
-DecisionGuard ships with a live synthetic data engine for the darkstore domain — not static fixtures.
+| | DecisionGuard | Classical experimentation platform | Custom rules engine |
+|--|--------------|------------------------------------|---------------------|
+| Hypothesis draft support | ✅ | Partial / stack-dependent | ❌ |
+| Prelaunch governance | ✅ | Partial / process-dependent | ❌ |
+| Final governance decision | ✅ | Partial | Partial |
+| Historical evidence retrieval | ✅ | Usually no | ❌ |
+| Fail-closed default | ✅ | Not always | Depends |
+| Synthetic evaluation engine | ✅ | Usually no | ❌ |
+| Privacy layer for LLM calls | ✅ | N/A | N/A |
+| Audit trail for decision chain | ✅ | Partial | Depends |
+| Autonomous AI-driven contour | Partial / evolving | ❌ | ❌ |
 
-Each run advances the simulation by **+7 days** using PostgreSQL across 8 tables:
-
-| Table | What it simulates |
-|-------|------------------|
-| `orders` | Revenue, AOV, basket composition |
-| `writeoff_log` | Perishable loss, shrinkage events |
-| `replenishment_log` | Supply fill rate, order cycles |
-| `supply_daily` | Supplier reliability, lead times |
-| `ops_daily` | Fulfillment stress, OOS events |
-| `demand_shocks_daily` | External demand spikes/drops |
-| `competitor_daily` | Price pressure, external signals |
-| `customer_daily` | Active buyers, churn events |
-
-Simulation knobs: `enable_demand_shocks`, `enable_supply_realism`, `enable_ops_noise`, `replenishment_capacity_mult`, `supplier_fill_rate`. Built-in realism scorer validates fill_rate_mean ∈ [0.93, 0.97] on each run.
-
----
-
-## System Boundaries & Assumptions
-
-| Assumption | Detail |
-|------------|--------|
-| GP Margin definition | `revenue − product COGS` only. Delivery cost excluded — intentional PoC simplification |
-| Churn rate | Calculated from `customer_daily` table. Returns 0.0 on short simulation windows — not a fake value |
-| Reconciliation | Runtime worker implemented. Accept/update flow with human approval gate on divergence |
-| Real data validation | Not yet tested on production data. Synthetic engine validated for logical consistency |
-| Database requirement | PostgreSQL required for runtime. Pipeline exits cleanly without DB |
-
----
-
-## Compared To
-
-| | DecisionGuard | Statsig | LaunchDarkly | Custom Rules Engine |
-|--|--------------|---------|--------------|-------------------|
-| Multi-agent reasoning chain | ✅ | ❌ | ❌ | ❌ |
-| Historical evidence retrieval (RAG) | ✅ | ❌ | ❌ | ❌ |
-| Paired experiment mode (live ctrl/trt delta) | ✅ | ❌ | ❌ | ❌ |
-| Fail-closed by default | ✅ | ❌ | ❌ | Depends |
-| Privacy layer (no raw data to LLM) | ✅ | N/A | N/A | N/A |
-| Domain-agnostic policy contracts | ✅ | ❌ | ❌ | ❌ |
-| 14-day experiment coverage gate | ✅ | ❌ | ❌ | ❌ |
-| Edge fallback + provisional decisions | ✅ | ❌ | ❌ | ❌ |
-| Cost per decision | $0.002 | SaaS pricing | SaaS pricing | Infra cost |
-| Goodhart's Law detection | ✅ | ❌ | ❌ | ❌ |
-
-> DecisionGuard is not a replacement for Statsig or LaunchDarkly — it is a governance layer that sits on top of them.
+> DecisionGuard can run on top of Statsig, LaunchDarkly, or internal stacks, and can also own a more autonomous contour:
+> **hypothesis draft → prelaunch audit → experiment run → final governance decision**.
 
 ---
 
 ## Quick Start
 
-### 0. Set up LLM API key (2 min, free)
+### 1. Set LLM API key
 
-DecisionGuard uses [Groq](https://console.groq.com) to power Captain, Doctor, and Commander agents.
-Without a key, agents run in deterministic-only fallback mode (no AI reasoning, `semantic_score=0`).
+DecisionGuard supports cloud LLM backend and fallback path.
+Without key, part of reasoning is limited or routed to local/deterministic mode.
 
 ```bash
-# 1. Get a free key: console.groq.com → Sign Up → API Keys → Create
-# 2. Store it in a local secrets file (never committed to git):
 echo "GROQ_API_KEY=gsk_..." > ~/.groq_secrets
 echo "LLM_ALLOW_REMOTE=1"  >> ~/.groq_secrets
 chmod 600 ~/.groq_secrets
-
-# 3. Verify (should print http_status=200):
-python3 scripts/debug_groq_api.py
 ```
 
-The runtime auto-loads `~/.groq_secrets` on startup — no `export` or manual key handling needed.
+### 2. Configure environment
 
-> **Never put the real key in `.env` or commit it.** `.gitignore` blocks `~/.groq_secrets` by default.
-
-### 1. Configure environment
-
-Copy `.env.example` and set:
+Copy `.env.example` and define main parameters:
 
 ```bash
 CLIENT_DB_HOST=...
@@ -308,17 +370,17 @@ CLIENT_DB_PORT=5432
 CLIENT_DB_NAME=...
 CLIENT_DB_USER=...
 CLIENT_DB_PASS=...
-SANITIZATION_KMS_MASTER_KEY=local_demo_key   # sandbox only — see Security section
+SANITIZATION_KMS_MASTER_KEY=local_demo_key
 SANITIZATION_READER_ROLE=runtime_orchestrator
 ```
 
-### 2. Choose domain template
+### 3. Pick domain template
 
 ```bash
-domain_templates/darkstore_fresh_v1.json   # public demo template
+domain_templates/darkstore_fresh_v1.json
 ```
 
-### 3. Run orchestration
+### 4. Run orchestration
 
 ```bash
 python3 scripts/run_all.py \
@@ -328,115 +390,62 @@ python3 scripts/run_all.py \
   --allow-remote-llm 1
 ```
 
-`--allow-remote-llm 1` enables cloud LLM (Groq). Key is loaded automatically from `~/.groq_secrets`.
-If `--experiment-id` is missing, run is fail-closed with `EXPERIMENT_CONTEXT_REQUIRED`.
-If experiment coverage is below 14 days, duration gate enforces `HOLD_NEED_DATA`.
-
-### 4. Build executive ROI scorecard
+### 5. Build reports
 
 ```bash
 python3 scripts/build_executive_roi_report.py --batch-id executive_batch_001
-```
-
-### 5. Batch evaluation + consolidated report
-
-```bash
-python3 scripts/run_batch_eval.py \
-  --batch-id executive_batch_001 \
-  --backend groq \
-  --max-cases 20
-
 python3 scripts/build_batch_consolidated_report.py --batch-id executive_batch_001
 ```
 
 ---
 
-<details>
-<summary><strong>Security & Tech Debt (Path to Production)</strong></summary>
+## Security and Path to Production
 
-| # | Area | PoC behavior | Production requirement |
-|---|------|-------------|----------------------|
-| 1 | Network / Proxy | Local demo may bypass enterprise proxy | Route all LLM traffic through corporate proxy/DLP with managed certificates |
-| 2 | KMS Master Key | `local_demo_key` allowed in sandbox — **emits warning at runtime** | Load from AWS KMS / HashiCorp Vault with rotation and audit controls |
-| 3 | Audit Integrity | `--integrity-required 0` available for legacy compat | Enforce `--integrity-required 1` in all release pipelines |
-| 4 | Reconciliation | Runtime worker implemented — `accepted` / `updated` paths with human approval gate | Monitor reconciliation match rate; add E2E integration test (P3 backlog) |
-| 5 | FPR calibration | 40% in PoC batch; release-candidate policy gate is active | Runtime remediation in Doctor/Commander remains in progress; target <15% |
+DecisionGuard already demonstrates mature security/integrity choices, but production path is still in progress.
 
-</details>
+Key directions:
+
+- managed KMS / Vault instead of local demo keys;
+- corporate proxy / DLP for all LLM traffic;
+- further calibration of reasoning quality gates;
+- stricter release-candidate policy for fallback and cloud-preflight sign-off;
+- stronger human approval flows;
+- additional real-world validation;
+- extended reconciliation monitoring;
+- deeper separation of format compliance vs semantic depth in reasoning evaluation.
 
 ---
 
-## Repository Layout
+## Repository Structure
 
-```
-src/               Shared runtime modules (security, failover, contracts)
-scripts/           Pipeline, gates, batch eval, and report tooling
-configs/contracts/ Machine-readable contracts and policies
-domain_templates/  External domain physics (Open Core monetization layer)
+```text
+src/               Common runtime modules: security, failover, contracts, orchestration
+scripts/           Pipelines, gates, batch eval, report tooling
+configs/contracts/ Machine-readable contracts and policy
+domain_templates/  Externalized domain physics and policy configuration
 docs/              Methodology, runbooks, architecture specs
 tests/             Regression, fail-closed, and contract tests
-examples/          Public investor demo artifacts (staging_only SoT)
-examples/investor_demo/src/   Raw pre-sanitized demo source files (input to staging pipeline)
+examples/          Demo guide + minimal public fixtures
 ```
 
 ---
 
-## Investor Demo Assets
+## Demo Artifacts
 
-All public demo artifacts are under a single Source of Truth:
+Public `examples/` includes:
 
-```
-examples/investor_demo/
-  reports_for_humans/
-    decision_card.md
-    batch_consolidated_report.md
-    executive_roi_scorecard.md
-  reports_for_agents/
-    batch_summary.json
-    agent_run_sample.json
-    cost_ledger.json
-    reconciliation_summary.json
-  synthetic_data/
-    synthetic_dataset_sample.json
-```
+- `DEMO_GUIDE.md` (+ `.sha256`);
+- minimal machine-checkable fixtures for reproducible checks.
 
-See [`examples/investor_demo/DEMO_GUIDE.md`](examples/investor_demo/DEMO_GUIDE.md).
-
-All demo artifacts and historical baseline snapshots included in this repository are synthetic and sanitized for public sharing.
-
----
-
-<details>
-<summary><strong>GitHub Release Packaging (staging_only)</strong></summary>
-
-Public showcase packaging is isolated from runtime artifacts. Artifacts are sanitized (no absolute paths, no secret refs) before publishing.
-
-```bash
-# 1. Build sanitized demo SoT + physical publish root
-python3 scripts/build_investor_demo_staging.py \
-  --publish-mode staging_only \
-  --publish-root github_publish \
-  --apply 1
-
-# 2. Run blocking pre-push audit (verifies SHA256 manifest, patterns, secrets)
-python3 scripts/run_publish_release_audit.py \
-  --publish-mode staging_only \
-  --publish-root github_publish \
-  --strict 1
-
-# 3. Confirm pre-push control
-git add examples/investor_demo/src/*
-```
-
-Push protection: `.githooks/pre-push` — blocks pushes containing internal paths. Deny-list patterns maintained in [`.gitignore`](.gitignore).
-
-</details>
+Detailed demo reports, internal historical corpora, and extended synthetic datasets are maintained in a private contour and are not published in public history.
 
 ---
 
 ## Contributing
 
-This is currently a private evaluation repository. If you are reviewing this project and want to discuss architecture or integration, please open a GitHub Discussion or contact the maintainer directly.
+This is currently an evaluation/portfolio repository.
+
+If you review the project and want to discuss architecture, integration, or roadmap, open a discussion or contact the maintainer directly.
 
 ---
 
