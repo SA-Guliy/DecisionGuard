@@ -114,3 +114,7 @@ examples/investor_demo/src/
 examples/investor_demo/synthetic_data/
 examples/investor_demo/DEMO_MANIFEST.json
 examples/investor_demo/DEMO_MANIFEST.json.sha256
+
+# internal docs
+/docs/EXECUTIVE_DEMO_RUNBOOK.md
+/docs/event_bus_contracts_v2.md
