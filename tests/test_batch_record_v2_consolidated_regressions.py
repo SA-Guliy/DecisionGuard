@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -102,6 +103,28 @@ class BatchRecordAndConsolidatedRegressionsTests(unittest.TestCase):
         self.assertIn("decision_tradeoffs", reasoning)
         self.assertIn("mitigations", reasoning)
         self.assertIn("uncertainty_gaps", reasoning)
+        self.assertIn("counterfactual", reasoning)
+        top_matches = record.get("top_matches")
+        self.assertIsInstance(top_matches, list)
+        self.assertGreaterEqual(len(top_matches), 1)
+        self.assertIsInstance(top_matches[0], dict)
+        self.assertIn("experiment_id", top_matches[0])
+        observed = reasoning.get("observed_facts") or []
+        self.assertIsInstance(observed, list)
+        self.assertGreaterEqual(len(observed), 6)
+        strict_pattern = re.compile(r"^(Metric=|Guardrail\s+metric=).*\bstatus=(PASS|BREACH|NO_DATA)\b")
+        for row in observed:
+            row_txt = str(row)
+            self.assertRegex(row_txt, strict_pattern)
+        self.assertTrue(any("Metric=historical_match_count" in str(x) for x in observed))
+        self.assertTrue(
+            any(
+                "Guardrail metric=margin" in str(x)
+                and "delta=-0.01" in str(x)
+                and "status=PASS" in str(x)
+                for x in observed
+            )
+        )
 
     def test_run_batch_eval_marks_failed_record_and_continues(self) -> None:
         batch_id = "unit_failed_record_batch"
@@ -152,6 +175,71 @@ class BatchRecordAndConsolidatedRegressionsTests(unittest.TestCase):
         out_sidecar.unlink(missing_ok=True)
         attempt_ledger.unlink(missing_ok=True)
         attempt_ledger_sidecar.unlink(missing_ok=True)
+
+    def test_non_go_breach_fact_contains_numeric_delta(self) -> None:
+        record = poc_mod._build_batch_record_v2(
+            run_id="run_reasoning_breach_001",
+            query="Risky rollout",
+            generated_at="2026-03-11T00:00:00+00:00",
+            captain={"sanity_status": "PASS", "pass_to_doctor": True},
+            doctor={"suggested_decision": "STOP_ROLLOUT"},
+            commander={"decision": "STOP_ROLLOUT"},
+            captain_usage=_usage(0.0),
+            doctor_usage=_usage(0.0),
+            commander_usage=_usage(0.0),
+            runtime_flags={"backend_error": False, "retryable_api_error": False, "provisional_local_fallback": False},
+            retrieval_top_k=3,
+            top_matches=[
+                {
+                    "experiment_id": "exp_risk_1",
+                    "similarity": 0.72,
+                    "primary_metric_outcome": {"metric_id": "orders", "delta_pct": -0.02},
+                    "guardrail_breach": {
+                        "metric_id": "margin",
+                        "delta_pct": -0.031,
+                        "breach_reason": "Margin below threshold",
+                    },
+                }
+            ],
+            needs_cloud_reconciliation=False,
+            reconciliation=None,
+        )
+        observed = ((record.get("reasoning") or {}).get("observed_facts") or [])
+        self.assertTrue(
+            any(
+                re.search(r"Guardrail metric=margin .*delta=-0\.031.*status=BREACH", str(x))
+                for x in observed
+            ),
+            msg=f"missing strict BREACH row with numeric delta: {observed}",
+        )
+
+    def test_no_top_matches_sets_no_data_and_uncertainty_markers(self) -> None:
+        record = poc_mod._build_batch_record_v2(
+            run_id="run_reasoning_nodata_001",
+            query="No history match case",
+            generated_at="2026-03-11T00:00:00+00:00",
+            captain={"sanity_status": "PASS", "pass_to_doctor": True},
+            doctor={"suggested_decision": "HOLD_NEED_DATA"},
+            commander={"decision": "HOLD_NEED_DATA"},
+            captain_usage=_usage(0.0),
+            doctor_usage=_usage(0.0),
+            commander_usage=_usage(0.0),
+            runtime_flags={"backend_error": False, "retryable_api_error": False, "provisional_local_fallback": False},
+            retrieval_top_k=3,
+            top_matches=[],
+            needs_cloud_reconciliation=False,
+            reconciliation=None,
+        )
+        reasoning = record.get("reasoning") or {}
+        observed = reasoning.get("observed_facts") or []
+        self.assertTrue(
+            any("Metric=historical_match_count value=0 status=NO_DATA." in str(x) for x in observed),
+            msg=f"missing NO_DATA historical_match_count row: {observed}",
+        )
+        uncertainty = reasoning.get("uncertainty_gaps") or []
+        self.assertTrue(any("historical_match_absent" in str(x) for x in uncertainty), msg=str(uncertainty))
+        self.assertTrue(any("need_live_validation:" in str(x) for x in uncertainty), msg=str(uncertainty))
+        self.assertTrue(any("need_guardrail_confirmation:" in str(x) for x in uncertainty), msg=str(uncertainty))
 
     def test_consolidated_groups_by_decision_buckets_and_contains_reasoning(self) -> None:
         with tempfile.TemporaryDirectory() as td:

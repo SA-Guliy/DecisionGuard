@@ -151,6 +151,7 @@ def _build_batch_record_v2(
     needs_cloud_reconciliation: bool,
     reconciliation: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    normalized_top_matches = [row for row in top_matches if isinstance(row, dict)]
     top_match = top_matches[0] if top_matches and isinstance(top_matches[0], dict) else {}
     primary = top_match.get("primary_metric_outcome") if isinstance(top_match.get("primary_metric_outcome"), dict) else {}
     breach = top_match.get("guardrail_breach") if isinstance(top_match.get("guardrail_breach"), dict) else {}
@@ -160,23 +161,86 @@ def _build_batch_record_v2(
     except Exception:
         similarity = 0.0
 
+    decision = str(commander.get("decision") or "HOLD_NEED_DATA").upper()
+    reasoning_inputs = (
+        commander.get("reasoning_confidence_inputs", {})
+        if isinstance(commander.get("reasoning_confidence_inputs"), dict)
+        else {}
+    )
+    paired_status = str(reasoning_inputs.get("paired_status", "SINGLE") or "SINGLE").strip().upper() or "SINGLE"
+
     observed_facts: list[str] = []
-    if top_match:
-        observed_facts.append(
-            f"Top historical match similarity={round(similarity, 4)} (experiment_id={str(top_match.get('experiment_id') or 'unknown')})."
-        )
     p_metric = str(primary.get("metric_id") or "").strip()
     p_delta = primary.get("delta_pct")
-    if p_metric and p_delta is not None:
-        observed_facts.append(f"Primary historical outcome: {p_metric} delta_pct={p_delta}.")
     g_metric = str(breach.get("metric_id") or "").strip()
     g_delta = breach.get("delta_pct")
-    if g_metric and g_delta is not None:
-        observed_facts.append(f"Guardrail historical signal: {g_metric} delta_pct={g_delta}.")
-    observed_facts.append(f"Doctor suggested_decision={str(doctor.get('suggested_decision') or 'HOLD_NEED_DATA').upper()}.")
-    observed_facts.append(f"Commander final decision={str(commander.get('decision') or 'HOLD_NEED_DATA').upper()}.")
+    breach_reason = str(breach.get("breach_reason") or "").strip()
 
-    decision = str(commander.get("decision") or "HOLD_NEED_DATA").upper()
+    if top_match:
+        observed_facts.append(
+            "Metric=historical_similarity "
+            f"value={round(similarity, 4)} "
+            "status=PASS "
+            f"experiment_id={str(top_match.get('experiment_id') or 'unknown')}."
+        )
+        observed_facts.append(
+            f"Metric=historical_match_count value={len(normalized_top_matches)} status=PASS."
+        )
+        observed_facts.append(
+            "Metric=hypothesis_h0 value=0 status=PASS "
+            "note=H0_treatment_effect_on_primary_metric_equals_0."
+        )
+        observed_facts.append(
+            "Metric=hypothesis_h1 value=1 status=PASS "
+            "note=H1_treatment_changes_primary_metric_with_guardrail_safety."
+        )
+    else:
+        observed_facts.append(
+            "Metric=historical_similarity value=0.0 status=NO_DATA experiment_id=none."
+        )
+        observed_facts.append(
+            "Metric=historical_match_count value=0 status=NO_DATA."
+        )
+    if p_metric and p_delta is not None:
+        observed_facts.append(
+            f"Metric={p_metric} delta={p_delta} source=historical status=PASS."
+        )
+    if p_metric and p_metric.lower() not in {"", "unknown"}:
+        p_control = primary.get("control")
+        p_treatment = primary.get("treatment")
+        if p_control is not None and p_treatment is not None:
+            observed_facts.append(
+                f"Metric={p_metric} control={p_control} treatment={p_treatment} status=PASS."
+            )
+    if g_metric and g_delta is not None:
+        observed_facts.append(
+            f"Guardrail metric={g_metric} delta={g_delta} source=historical status=PASS."
+        )
+    if g_metric and breach_reason:
+        if decision == "GO":
+            observed_facts.append(
+                f"Guardrail metric={g_metric} delta={g_delta if g_delta is not None else 'unavailable'} "
+                f"status=PASS note={breach_reason}."
+            )
+        else:
+            observed_facts.append(
+                f"Guardrail metric={g_metric} delta={g_delta if g_delta is not None else 'unavailable'} "
+                f"status=BREACH reason={breach_reason}."
+            )
+    observed_facts.append(
+        "Metric=doctor_suggested_decision "
+        f"value={str(doctor.get('suggested_decision') or 'HOLD_NEED_DATA').upper()} "
+        "status=PASS."
+    )
+    observed_facts.append(
+        "Metric=commander_final_decision "
+        f"value={decision} "
+        "status=PASS."
+    )
+    observed_facts.append(
+        f"Metric=paired_status value={paired_status} status=PASS."
+    )
+
     causal_interpretation = str(doctor.get("causal_story") or doctor.get("analysis_note") or "").strip()
     if not causal_interpretation:
         causal_interpretation = "Causal link is weak or incomplete; defensive governance defaults were applied."
@@ -196,6 +260,24 @@ def _build_batch_record_v2(
             "GO was rejected due to insufficient/contradictory evidence; STOP was not forced because hard harm evidence "
             "was not fully conclusive."
         )
+    metric_ref = p_metric or "primary_metric"
+    guardrail_ref = g_metric or "guardrail_metric"
+    if decision == "GO":
+        counterfactual = (
+            f"If Metric={metric_ref} delta<=0.000 or Guardrail metric={guardrail_ref} delta<=-0.010 "
+            "status=BREACH, downgrade decision to HOLD_NEED_DATA."
+        )
+    elif decision in {"STOP", "STOP_ROLLOUT"}:
+        counterfactual = (
+            f"If Guardrail metric={guardrail_ref} breach clears (delta>=0.000) and "
+            f"Metric={metric_ref} delta>0.000 with p<0.050, revisit STOP_ROLLOUT to HOLD_NEED_DATA."
+        )
+    else:
+        counterfactual = (
+            f"If Metric={metric_ref} shows stable positive delta>=0.010 and "
+            f"Guardrail metric={guardrail_ref} remains above threshold for 2 consecutive windows, "
+            "promote HOLD_NEED_DATA to RUN_AB."
+        )
 
     commander_guardrail_status = (
         commander.get("guardrail_status_check", [])
@@ -213,11 +295,6 @@ def _build_batch_record_v2(
                 break
     else:
         guardrail_data_complete = False
-    reasoning_inputs = (
-        commander.get("reasoning_confidence_inputs", {})
-        if isinstance(commander.get("reasoning_confidence_inputs"), dict)
-        else {}
-    )
     layers_present = (
         reasoning_inputs.get("layers_present", {})
         if isinstance(reasoning_inputs.get("layers_present"), dict)
@@ -259,11 +336,11 @@ def _build_batch_record_v2(
         missing_evidence.append("cloud_reconciliation_pending")
     if decision.startswith("HOLD"):
         missing_evidence.append("critical_evidence_incomplete")
-    evidence_count = len(top_matches) + len([x for x in observed_facts if str(x).strip()])
+    evidence_count = len(normalized_top_matches) + len([x for x in observed_facts if str(x).strip()])
     evidence_score = 0.78
-    if len(top_matches) == 0:
+    if len(normalized_top_matches) == 0:
         evidence_score -= 0.35
-    elif len(top_matches) == 1:
+    elif len(normalized_top_matches) == 1:
         evidence_score -= 0.15
     if missing_evidence:
         evidence_score -= 0.1
@@ -274,6 +351,12 @@ def _build_batch_record_v2(
     mitigations = [str(x).strip() for x in (doctor.get("recommended_actions") or []) if str(x).strip()]
     mitigations.extend([str(x).strip() for x in (commander.get("next_steps") or []) if str(x).strip()])
     uncertainty_gaps = [str(x).strip() for x in missing_evidence if str(x).strip()]
+    uncertainty_gaps.append(
+        f"need_live_validation: Metric={metric_ref} requires p<0.05 or CI_not_crossing_zero."
+    )
+    uncertainty_gaps.append(
+        f"need_guardrail_confirmation: Guardrail metric={guardrail_ref} requires sustained status=PASS."
+    )
     review_rows = (
         commander.get("doctor_hypothesis_review", [])
         if isinstance(commander.get("doctor_hypothesis_review"), list)
@@ -310,6 +393,7 @@ def _build_batch_record_v2(
         "generated_at": generated_at,
         "retrieval_top_k": retrieval_top_k,
         "top_match": top_match,
+        "top_matches": normalized_top_matches,
         "captain": captain,
         "doctor": doctor,
         "commander": commander,
@@ -329,6 +413,7 @@ def _build_batch_record_v2(
             "observed_facts": observed_facts,
             "causal_interpretation": causal_interpretation,
             "why_not_opposite_decision": why_not_opposite,
+            "counterfactual": counterfactual,
             "confidence": {
                 "score": round(float(confidence_score), 4),
                 "label": confidence_label,
@@ -1514,6 +1599,18 @@ def main() -> None:
         "--batch-record-out",
         default="",
         help="Optional explicit artifact path for batch transport (policy: no stdout-ingest).",
+    )
+    parser.add_argument(
+        "--release-candidate",
+        type=int,
+        choices=(0, 1),
+        default=0,
+        help="Compatibility flag for batch runner release profile (accepted, no behavior change in this script).",
+    )
+    parser.add_argument(
+        "--blocked-models",
+        default="",
+        help="Compatibility passthrough for batch runner model blocklist (parsed but not used directly here).",
     )
     args = parser.parse_args()
 

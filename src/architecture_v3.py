@@ -115,6 +115,10 @@ REQUIRED_GATE_ORDER = [
 
 SANITIZATION_TRANSFORM_PATH = CONTRACTS_DIR / "sanitization_transform_v1.json"
 SANITIZATION_POLICY_PATH = CONTRACTS_DIR / "sanitization_policy_v2.json"
+REASONING_QUALITY_POLICY_PATH = CONTRACTS_DIR / "reasoning_quality_policy_v1.json"
+REASONING_QUALITY_POLICY_V2_PATH = CONTRACTS_DIR / "reasoning_quality_policy_v2.json"
+REASONING_DEPTH_POLICY_PATH = CONTRACTS_DIR / "reasoning_depth_policy_v1.json"
+FPR_CALIBRATION_POLICY_PATH = CONTRACTS_DIR / "fpr_calibration_policy_v1.json"
 RECONCILIATION_POLICY_PATH = CONTRACTS_DIR / "reconciliation_policy_v1.json"
 PAIRED_STATUS_ENUM = PAIRED_RUN_STATUS_VALUES
 PAIRED_CTRL_FOUNDATION_ALLOWED_STEPS = CTRL_FOUNDATION_ALLOWED_STEPS
@@ -291,6 +295,30 @@ def paired_experiment_context_path(run_id: str) -> Path:
 
 def ctrl_foundation_audit_path(run_id: str) -> Path:
     return Path(f"data/agent_quality/{run_id}_ctrl_foundation_audit.json")
+
+
+def data_hygiene_report_path(run_id: str) -> Path:
+    return Path(f"data/agent_quality/{run_id}_data_hygiene_report.json")
+
+
+def agent2_hypothesis_package_path(run_id: str, *, phase: str = "prelaunch") -> Path:
+    phase_norm = str(phase or "prelaunch").strip().lower() or "prelaunch"
+    phase_norm = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in phase_norm)
+    return Path(f"data/agent_quality/{run_id}_agent2_hypothesis_package_{phase_norm}.json")
+
+
+def agent2_cloud_evidence_path(run_id: str, *, phase: str = "prelaunch") -> Path:
+    phase_norm = str(phase or "prelaunch").strip().lower() or "prelaunch"
+    phase_norm = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in phase_norm)
+    return Path(f"data/agent_quality/{run_id}_agent2_cloud_evidence_{phase_norm}.json")
+
+
+def prelaunch_governance_path(run_id: str) -> Path:
+    return Path(f"data/agent_quality/{run_id}_prelaunch_governance.json")
+
+
+def final_governance_verdict_path(run_id: str) -> Path:
+    return Path(f"data/agent_quality/{run_id}_final_governance_verdict.json")
 
 
 def list_gate_results(run_id: str) -> list[Path]:
