@@ -1,218 +1,128 @@
-# ARCHITECTURE: Runtime Failover and Secure LLM Gateway
+# ARCHITECTURE (Public-Safe)
 
 ## Purpose
-This document describes two core runtime mechanisms:
-- `runtime_failover`: continuity of decisioning under model/backend outages.
-- `llm_secure_gateway`: privacy-preserving cloud inference with reversible local obfuscation.
+DecisionGuard is a fail-closed decision-governance runtime for experiments.
 
-The goal is to keep **availability high** while preserving **data sovereignty** and **fail-closed safety**.
+Public architecture goals:
+- keep decision continuity under backend/model failures;
+- protect sensitive data in cloud inference paths;
+- preserve auditability and artifact integrity;
+- enforce explicit gates before rollout-eligible decisions.
 
 ## System Boundaries
 - Orchestration entrypoint: `scripts/run_all.py`
-- Core agent roles: `Agent-1`, `Agent-2`, `Agent-3`
-- Runtime execution contour: includes additional gate roles/checks (for example `evaluator`, `acceptance`, `pre_publish`)
-- Shared controls:
-  - `src/runtime_failover.py`
-  - `src/llm_secure_gateway.py`
-  - `src/sanitization_transform.py`
+- Core role model:
+  - `Agent-1`: data hygiene / sanity
+  - `Agent-2`: hypothesis and causal analysis
+  - `Agent-3`: final governance decision
+- Runtime contour is broader than the simplified role chain and includes additional gated steps (for example evaluator/acceptance/publish checks).
 
-## Runtime Failover
-### Policy
-The failover order is deterministic:
-1. `groq` (cloud, preferred)
-2. `ollama` (edge/local model server)
-3. deterministic local output (hard fallback)
+Source of truth for runtime order, gates, and artifacts:
+- `src/architecture_v3.py`
 
-`local_mock` is disallowed by policy in `runtime_failover`.
+## Runtime Overview
 
-### Agent Model Policy (`src/model_policy.py`)
+### 1) Failover and Continuity
+Decision execution uses deterministic fallback semantics:
+1. cloud path
+2. edge/local model path
+3. deterministic local safe path
 
-Single source of truth for role-to-model assignment is `src/model_policy.py`.
+Public guarantees:
+- fallback is explicit (never silent);
+- provisional paths are marked and require reconciliation;
+- policy violations are fail-closed.
 
-Public-safe summary:
-- Agent-2 and Agent-3 are configured with reasoning-first model policy.
-- Runtime keeps deterministic fallback semantics (`cloud -> edge/local -> deterministic local`).
-- Provisional/fallback path is explicitly marked in provenance and requires reconciliation.
+Source of truth:
+- `src/runtime_failover.py`
+- `src/model_policy.py`
 
-### Runtime Continuity Under Model Changes
+### 2) Secure LLM Gateway
+Any cloud LLM path must pass secure gateway controls.
 
-Public-safe summary:
-- Runtime handles both known and unknown cloud-model failures without manual intervention.
-- Decommissioned/failed cloud tiers are skipped or caught and the next allowed tier is selected.
-- Reasoning continuity for Agent-2/Agent-3 is enforced by policy order in `src/model_policy.py`.
-- Any fallback path remains auditable through machine-readable provenance fields.
+Public guarantees:
+- sanitization before cloud call;
+- controlled local re-mapping/deobfuscation;
+- contract integrity checks for gateway policies;
+- auditable artifact trail with integrity sidecars.
 
-### Implementation Path
-1. Each agent builds tiers with `build_runtime_failover_tiers(...)`.
-2. Generation is executed through `generate_with_runtime_failover(...)`.
-3. The runtime tries each tier in order; on error, it records attempt metadata and continues.
-4. If all model tiers fail, deterministic fallback is used (if provided).
+Source of truth:
+- `src/llm_secure_gateway.py`
+- `src/sanitization_transform.py`
+- `configs/contracts/sanitization_policy_v2.json`
 
-### Emitted Provenance
-Each call emits machine-readable metadata, including:
-- `fallback_tier`
-- `used_fallback`
-- `fallback_reason`
-- `provisional_local_fallback`
-- `needs_cloud_reconciliation`
-- `attempts[]`
+### 3) Integrity and Audit
+DecisionGuard treats integrity as blocking:
+- missing required artifact/sidecar => fail-closed;
+- invalid schema/contract => fail-closed;
+- inconsistent gate sequence => fail-closed.
 
-This data drives acceptance checks and reconciliation workflows.
+Audit surfaces include:
+- gate results,
+- fallback provenance,
+- reconciliation markers,
+- decision artifacts.
 
-## Secure LLM Gateway
-### Security Contract Loading
-For cloud paths, gateway enforces:
-- sanitization policy contract integrity
-- sanitization transform contract integrity
-- ACL constraints (`SANITIZATION_READER_ROLE`)
+## Decision Governance Lifecycle
 
-Any violation is fail-closed.
+Conceptual lifecycle used in product narrative:
+`S1 -> S2 -> S3 -> S4 -> S5`
 
-### Request Flow
-1. Raw prompt/system text enters gateway.
-2. `apply_transform(...)` converts sensitive numeric/identifier fragments into placeholders.
-3. If vectorization/transform requirements are not met, call fails with `SANITIZATION_REQUIRED_FOR_CLOUD`.
-4. Cloud backend receives only transformed content.
-5. Response is locally deobfuscated using replacement map.
+Where:
+- `S1`: Data hygiene (Agent-1)
+- `S2`: Hypothesis draft (Agent-2)
+- `S3`: Prelaunch audit (Agent-3)
+- `S4`: Experiment run
+- `S5`: Final governance (Agent-3)
 
-### Obfuscation Map Lifecycle
-1. Gateway writes map payload for each cloud call.
-2. Payload is encrypted in local envelope form.
-3. Key material is loaded from runtime environment under policy constraints.
-4. Map is stored in controlled security storage with:
-   - integrity sidecar (`.sha256`)
-   - manifest registration
-   - audit log entry
-   - TTL purge handling
+Important:
+- This lifecycle is conceptual;
+- runtime execution includes additional machine gates and checks beyond the simplified 5-step view.
 
-### Response Integrity Semantics
-Gateway records:
-- `response_deobfuscation_required`
-- `response_deobfuscation_applied_actual`
-- `response_deobfuscation_hit_count`
+## Evidence Layers
+Decision quality is built on multiple evidence layers:
+- current run metrics and guardrails,
+- historical retrieval context (RAG-style retrieval),
+- statistical evidence artifacts used by runtime policy/gates.
 
-Acceptance and pre-publish enforce consistency:
-- `applied_actual == (hit_count > 0)`
+Public principle:
+- outcome metrics alone are not sufficient for final governance;
+- rationale must be evidence-linked and gate-compliant.
 
-## Reconciliation for Provisional Decisions
-When fallback makes a run provisional:
-- `needs_cloud_reconciliation=true` is emitted.
-- Reconciliation worker compares provisional and cloud decisions.
-- Match-rate is persisted for governance and ROI scorecards.
+## Paired Experiment and Safe Ceiling
+When paired context is incomplete/failed, decision ceilings are applied.
 
-## Failure Modes (Fail-Closed)
-Examples that hard-stop or mark run unsafe:
-- missing/invalid contract sidecar
-- cloud call without sanitization transform
-- map encryption or audit-trail failure
-- policy violation in runtime failover path
+Public guarantee:
+- incomplete evidence cannot silently produce aggressive rollout decisions.
 
-## Operational Controls
-Minimum required env vars for secure runtime:
-- encryption key material (non-empty)
-- authorized reader role for sanitization maps
+## Reconciliation Model
+If decisioning used fallback/provisional paths:
+- run is marked for reconciliation;
+- reconciliation is auditable;
+- policy determines whether human/governance approval is required for any decision change.
 
-Optional runtime controls:
-- `LLM_ALLOW_REMOTE`
-- backend/model selection flags per script
+## Failure Semantics
+DecisionGuard prefers explicit failure over silent degradation.
 
-## Why This Matters for Enterprise
-- Privacy-first by default on cloud inference.
-- Transparent fallback semantics for business continuity.
-- Traceable governance through structured artifacts and integrity checks.
-- Explicit failure behavior preferred over silent degradation.
+Examples of fail-closed classes:
+- contract/integrity violations,
+- missing required evidence artifacts,
+- disallowed cloud path behavior,
+- critical gate failures.
 
----
+## Operational Scope (Public-Safe)
+This document intentionally does not include:
+- secret material instructions,
+- internal runbook commands and migration paths,
+- environment-specific operational thresholds,
+- internal-only troubleshooting playbooks.
 
-## Paired Experiment Mode
+Internal operations runbooks are maintained separately from public architecture docs.
 
-Paired mode runs control and treatment branches under the same `experiment_id` and governs the full lifecycle from launch through decision.
-
-### Data Flow
-1. `--mode paired` triggers `_run_ctrl_foundation_only` — control simulation and metrics snapshot.
-2. Treatment pipeline runs against the same experiment context.
-3. On completion, `PairedExperimentContext` is written to `data/agent_context/<run_id>_paired_experiment_v2.json`.
-4. Agent-2 receives live `StatEvidenceBundle` (p-value, CI, effect size per metric) — enabling Layers 1+2 of reasoning.
-5. Agent-3 enforces `guardrail_status_check[]` — any statistical breach blocks aggressive decisions.
-
-### Lifecycle States
-| Status | Meaning | Decision Ceiling |
-|--------|---------|-----------------|
-| `COMPLETE` | Both arms succeeded; all three reasoning layers active | No forced ceiling |
-| `PARTIAL` | Treatment failed after ctrl succeeded | Forced `HOLD_NEED_DATA` |
-| `TREATMENT_FAILED` | Treatment pipeline failed (preserved distinct from PARTIAL for audit) | Forced `HOLD_NEED_DATA` |
-| `CTRL_FAILED` | Control failed; treatment not attempted; no decision issued | Hard stop |
-
-### Fail-Closed Guarantees
-- Aggressive decisions (`GO/RUN_AB/ROLLOUT_CANDIDATE`) are blocked at runtime **and** re-checked at acceptance for any `partial-like` status.
-- Partial-like status cannot be written back to `COMPLETE` — no status regression.
-- Registry stored at `data/paired_registry/<exp_id>__<run_id>.json` with SHA256 sidecar and path-injection guard.
-
----
-
-## Experiment Governance Gates
-
-Two mandatory gates enforce experiment hygiene before any agent reasoning begins.
-
-### Experiment Context Gate
-Every run requires `--experiment-id`. Without it, execution stops immediately with `EXPERIMENT_CONTEXT_REQUIRED` — there is no opt-out path in the orchestrator. Anonymous runs cannot produce governance artifacts.
-
-### 14-Day Duration Gate
-Aggressive final decisions are gated by a minimum 14-day coverage window for the same `experiment_id`. If coverage is below threshold, the decision ceiling is forced to `HOLD_NEED_DATA` regardless of what the LLM concludes. This prevents premature rollouts on underpowered observations.
-
-Both gates are enforced in order by the V3 contract set and are auditable in `data/gates/`.
-
----
-
-## Statistical Inference Layer
-
-Two deterministic components provide mathematical grounding for agent reasoning. Neither calls an LLM — they are pure computation that runs before agents receive context.
-
-### stat_engine (`src/stat_engine.py`)
-
-Computes a `StatEvidenceBundle` from paired control/treatment metric snapshots:
-
-| Metric type | Method | Why |
-|---|---|---|
-| Sample means (AOV, GMV, orders) | Welch's t-test (`ttest_ind_from_stats`, `equal_var=False`) | Real A/B data rarely has equal variance between arms |
-| Ratio metrics (gp_margin, fill_rate, oos_lost_gmv_rate) | Aggregate-only path, verdict `UNDERPOWERED` | Row-level variance is undefined for ratios computed from aggregates — standard t-test is statistically invalid |
-| Sample Ratio Mismatch | 10% drift threshold on n_ctrl vs n_trt | Detects assignment bugs before reasoning begins |
-
-Output (`StatEvidenceBundle`) fields: `layers_present`, `metrics[]` (p-value, CI, effect_size, verdict per metric), `guardrail_status_check[]`, `srm_flag`.
-
-Bundle is written to `data/stat_evidence/<run_id>_stat_evidence_bundle_v1.json` with SHA256 sidecar and consumed by Agent-2 and Agent-3 contexts.
-
-### reasoning_confidence (`src/reasoning_confidence.py`)
-
-Computes a dynamic confidence score from `configs/contracts/reasoning_confidence_policy_v1.json`. Replaces the previous hardcoded constant.
-
-Penalty system (applied to base score of 0.58):
-- `layer1_missing`: −0.20
-- `layer2_missing`: −0.15
-- `guardrail_data_incomplete`: −0.15
-- `underpowered_or_no_data`: −0.18
-- `srm_failed`: −0.12
-
-Hard caps (ceiling, not floor):
-- `partial_or_failed_paired_status`: 0.60 — incomplete treatment evidence cannot produce high-confidence decisions
-- `single_mode_no_live_evidence`: 0.64
-- `missing_layers12`: 0.62
-
-Bonus: +0.07 if primary metric p-value < 0.05 (significant result confirmed by data).
-
-Returns `(float, list[str])` — score and basis list for full auditability.
-
----
-
-## API Key Auto-Loading
-
-The runtime automatically loads `GROQ_API_KEY` from `~/.groq_secrets` at startup via `_inject_groq_key_if_needed()`.
-
-### Security guarantees
-- Key value is never printed, logged, or returned in any artifact.
-- `override=False` — an explicitly set environment variable always takes precedence over the file.
-- Key format is validated (`gsk_` prefix, minimum 20 characters) before being accepted.
-- File path is not disclosed in log messages.
-- Failure is non-fatal: agents fall through to deterministic fallback with an informational message.
-
-This means operators and automated agents can run the full cloud path without manual `export` steps or hardcoding keys in configuration files.
+## References
+- `README.md`
+- `AGENT_EVAL.md`
+- `src/architecture_v3.py`
+- `src/runtime_failover.py`
+- `src/llm_secure_gateway.py`
+- `src/model_policy.py`
