@@ -105,3 +105,11 @@ examples/investor_demo/reports_for_humans/executive_roi_scorecard.md
 examples/investor_demo/reports_for_humans/executive_roi_scorecard.md.sha256
 examples/investor_demo/reports_for_humans/batch_consolidated_report.md
 examples/investor_demo/reports_for_humans/batch_consolidated_report.md.sha256
+
+# Private demo internals (anti-copy)
+examples/investor_demo/reports_for_agents/
+examples/investor_demo/reports_for_humans/
+examples/investor_demo/src/
+examples/investor_demo/synthetic_data/
+examples/investor_demo/DEMO_MANIFEST.json
+examples/investor_demo/DEMO_MANIFEST.json.sha256
