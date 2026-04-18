@@ -115,6 +115,14 @@ DecisionGuard follows governance state-machine `S1 → S2 → S3 → S4 → S5`:
 - **S4 Experiment Run**: execution and signal collection;
 - **S5 Final Governance (Agent-3)**: final interpretation and rollout verdict.
 
+SoT note for reviewers:
+- `S1 → S5` is the conceptual governance lifecycle.
+- Current public runtime execution contour is broader than this simplified diagram and includes additional gate roles and checks (for example `evaluator`, `acceptance`, `pre_publish`) in fail-closed order.
+- Role mapping in current tracked runtime:
+  - `Agent-1` ↔ `captain`
+  - `Agent-2` ↔ `doctor`
+  - `Agent-3` ↔ `commander`
+
 Simplified flow:
 
 ```mermaid

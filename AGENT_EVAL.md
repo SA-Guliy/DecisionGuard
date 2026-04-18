@@ -180,7 +180,7 @@ In the public repository, canonical benchmark claims are published only if all c
 
 - source artifact is tracked in git;
 - source artifact has valid `.sha256` sidecar;
-- claim passes CI consistency checks;
+- claim passes controlled consistency checks in release/publish contour;
 - source artifact is outside private deny/ignore zones.
 
 Current public status for this document:
