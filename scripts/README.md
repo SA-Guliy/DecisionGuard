@@ -8,9 +8,9 @@ This file helps navigate `scripts/` quickly during review, demo, or interview.
 
 ## Core Agents (3-agent system)
 
-- `run_captain_sanity_llm.py` — Agent 1 (Captain / Data Verifier)
-- `run_doctor_variance.py` — Agent 2 (Doctor / Experiment Designer)
-- `run_commander_priority.py` — Agent 3 (Commander / Decision Gatekeeper)
+- `run_captain_sanity_llm.py` — Agent 1 (Agent-1 / Data Verifier)
+- `run_doctor_variance.py` — Agent 2 (Agent-2 / Experiment Designer)
+- `run_commander_priority.py` — Agent 3 (Agent-3 / Decision Gatekeeper)
 
 ## AB Validity + Analysis
 
@@ -26,7 +26,7 @@ This file helps navigate `scripts/` quickly during review, demo, or interview.
 - `build_agent_interaction_friction_report.py` — cross-run frictions / fallback patterns
 - `build_action_trace.py` — action trace
 - `build_evidence_pack.py` — evidence bundle
-- `build_cohort_evidence_pack.py` — cohort evidence for Commander / AB interpretation
+- `build_cohort_evidence_pack.py` — cohort evidence for Agent-3 / AB interpretation
 
 ## Data Quality / Metrics / Diagnostics
 

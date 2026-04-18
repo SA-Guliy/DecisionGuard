@@ -9,7 +9,7 @@ The goal is to keep **availability high** while preserving **data sovereignty** 
 
 ## System Boundaries
 - Orchestration entrypoint: `scripts/run_all.py`
-- Agent chain: `Captain -> Doctor -> Commander`
+- Agent chain: `Agent-1 -> Agent-2 -> Agent-3`
 - Shared controls:
   - `src/runtime_failover.py`
   - `src/llm_secure_gateway.py`
@@ -26,13 +26,13 @@ The failover order is deterministic:
 
 ### Agent Model Policy (`src/model_policy.py`)
 
-Each agent has a dedicated model chain. Doctor and Commander use **reasoning models** (confirmed via `reasoning_tokens` in API response). Single source of truth: `src/model_policy.py`.
+Each agent has a dedicated model chain. Agent-2 and Agent-3 use **reasoning models** (confirmed via `reasoning_tokens` in API response). Single source of truth: `src/model_policy.py`.
 
 | Agent | Role | Model chain (priority order) | Reasoning tiers |
 |---|---|---|---|
-| **Captain** | Sanity & realism check | `llama-3.1-8b-instant` (Groq) | — (not required for QA gate) |
-| **Doctor** | Hypothesis audit | `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `openai/gpt-oss-20b` | 3 of 4 |
-| **Commander** | Final governance decision | `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` | 2 of 3 |
+| **Agent-1** | Sanity & realism check | `llama-3.1-8b-instant` (Groq) | — (not required for QA gate) |
+| **Agent-2** | Hypothesis audit | `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `openai/gpt-oss-20b` | 3 of 4 |
+| **Agent-3** | Final governance decision | `qwen/qwen3-32b` → `openai/gpt-oss-20b` → `llama-3.3-70b-versatile` | 2 of 3 |
 | **Local fallback** | API outage only | `gemma3:1b` (Ollama) | — (provisional, pending reconciliation) |
 
 `openai/gpt-oss-120b` and `openai/gpt-oss-20b` are reasoning models served via Groq — API responses include a `reasoning` field and non-zero `reasoning_tokens` in usage. `llama-3.3-70b-versatile` is the last-resort non-reasoning fallback before dropping to Ollama.
@@ -50,8 +50,8 @@ DecisionGuard handles this at two levels:
 Any model not in the decommission list is attempted. On exception (HTTP 404, 503, timeout), the error is logged as `[DEBUG CLOUD ERROR]` and the runtime automatically advances to the next tier — no manual intervention required.
 
 **Reasoning guarantee.**
-Both Doctor and Commander have at least two reasoning-capable tiers before falling to a non-reasoning model:
-- If `qwen/qwen3-32b` is decommissioned → `openai/gpt-oss-120b` (Doctor) or `openai/gpt-oss-20b` (Commander) takes over, both confirmed reasoning.
+Both Agent-2 and Agent-3 have at least two reasoning-capable tiers before falling to a non-reasoning model:
+- If `qwen/qwen3-32b` is decommissioned → `openai/gpt-oss-120b` (Agent-2) or `openai/gpt-oss-20b` (Agent-3) takes over, both confirmed reasoning.
 - Only if both reasoning tiers fail does the system fall to `llama-3.3-70b-versatile` (non-reasoning, still produces a decision).
 
 **Updating the model chain.**
@@ -147,8 +147,8 @@ Paired mode runs control and treatment branches under the same `experiment_id` a
 1. `--mode paired` triggers `_run_ctrl_foundation_only` — control simulation and metrics snapshot.
 2. Treatment pipeline runs against the same experiment context.
 3. On completion, `PairedExperimentContext` is written to `data/agent_context/<run_id>_paired_experiment_v2.json`.
-4. Doctor receives live `StatEvidenceBundle` (p-value, CI, effect size per metric) — enabling Layers 1+2 of reasoning.
-5. Commander enforces `guardrail_status_check[]` — any statistical breach blocks aggressive decisions.
+4. Agent-2 receives live `StatEvidenceBundle` (p-value, CI, effect size per metric) — enabling Layers 1+2 of reasoning.
+5. Agent-3 enforces `guardrail_status_check[]` — any statistical breach blocks aggressive decisions.
 
 ### Lifecycle States
 | Status | Meaning | Decision Ceiling |
@@ -195,7 +195,7 @@ Computes a `StatEvidenceBundle` from paired control/treatment metric snapshots:
 
 Output (`StatEvidenceBundle`) fields: `layers_present`, `metrics[]` (p-value, CI, effect_size, verdict per metric), `guardrail_status_check[]`, `srm_flag`.
 
-Bundle is written to `data/stat_evidence/<run_id>_stat_evidence_bundle_v1.json` with SHA256 sidecar and consumed by Doctor and Commander agent contexts.
+Bundle is written to `data/stat_evidence/<run_id>_stat_evidence_bundle_v1.json` with SHA256 sidecar and consumed by Agent-2 and Agent-3 contexts.
 
 ### reasoning_confidence (`src/reasoning_confidence.py`)
 

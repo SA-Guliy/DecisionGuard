@@ -59,7 +59,7 @@ python3 scripts/run_poc_e2e.py \
   --interactive
 ```
 
-Interactive mode is intentional for live demo Q&A with Commander (type `exit` / `quit` to close).
+Interactive mode is intentional for live demo Q&A with Agent-3 (type `exit` / `quit` to close).
 
 ```bash
 python3 scripts/run_batch_eval.py \

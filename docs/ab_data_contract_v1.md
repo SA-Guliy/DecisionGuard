@@ -62,12 +62,12 @@ Minimum required artifacts before final AB decisioning:
 | Assignment log (`step1.*experiment_assignment*`) | Defines `arm` per unit | Yes |
 | Order fact (step1 / valid view) | Observed outcomes (`order_gmv`, etc.) | Yes |
 | Metrics snapshot (`data/metrics_snapshots/<run_id>.json`) | Run config + context | Yes |
-| Doctor/Evaluator outputs | Goal + measurement state for alignment and report | Yes (for full v2 report) |
+| Agent-2/Evaluator outputs | Goal + measurement state for alignment and report | Yes (for full v2 report) |
 
 Planned (v2 contract hardening):
 - `ab_input_fact_order` (canonical AB analysis fact)
 - `customer_window_features` (cohort- and customer-level AB features)
-- `cohort_evidence_pack` (compact aggregated cohorts for Doctor/Commander)
+- `cohort_evidence_pack` (compact aggregated cohorts for Agent-2/Agent-3)
 - `surrogate_batch_id` (interim lot key from `store_id|product_id|lot_received_date|lot_expiry_date` for writeoff attribution diagnostics until real batch/lot id is persisted)
 
 ## Goal1 Canonical Checklist (required for writeoff/expiry decisioning)
@@ -184,9 +184,9 @@ This is required for debugging patterns across runs (not only one run).
 
 ## Agent Read Rules (Current + Planned)
 
-- Agent 1 (Captain / realism-safety): reads quality/realism and safety artifacts.
-- Agent 2 (Doctor): reads Agent 1 outputs + AB preflight + cohort evidence pack.
-- Agent 3 (Commander): reads all agent outputs + AB preflight + AB report + memory registries.
+- Agent 1 (Agent-1 / realism-safety): reads quality/realism and safety artifacts.
+- Agent 2 (Agent-2): reads Agent 1 outputs + AB preflight + cohort evidence pack.
+- Agent 3 (Agent-3): reads all agent outputs + AB preflight + AB report + memory registries.
 
 ## Status of This Contract
 

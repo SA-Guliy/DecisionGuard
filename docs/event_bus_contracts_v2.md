@@ -142,8 +142,8 @@ Given shared host memory constraints (8 GB total), bus consumers/producers must:
 
 Event bus semantics are now coupled to runtime gates:
 
-1. `historical_retrieval_gate` validates availability/integrity of historical context before Doctor.
-2. `historical_retrieval_conformance_gate` validates real consumption of `historical_context_pack` by Doctor and Commander.
+1. `historical_retrieval_gate` validates availability/integrity of historical context before Agent-2.
+2. `historical_retrieval_conformance_gate` validates real consumption of `historical_context_pack` by Agent-2 and Agent-3.
 3. Runtime cloud policy is evaluated for all scripts executed from `run_all.py` scope.
 4. Any cloud LLM path (runtime + POC) is allowed only via `src/llm_secure_gateway.py` and must emit:
    - `obfuscation_map_ref`,

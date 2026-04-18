@@ -7,16 +7,16 @@ implementation without losing safety.
 ## Scope
 
 - AB analysis: `scripts/run_ab_analysis.py`
-- Doctor: `scripts/run_doctor_variance.py`
+- Agent-2: `scripts/run_doctor_variance.py`
 - Evaluator: `scripts/run_experiment_evaluator.py`
-- Commander: `scripts/run_commander_priority.py`
+- Agent-3: `scripts/run_commander_priority.py`
 - Acceptance verifier: `scripts/verify_acceptance.py`
 
 ## Contour separation (required)
 
 Reports must keep two contexts separate:
 - `current AB contour`: metric/goal of the AB run being interpreted now.
-- `next experiment contour`: Doctor's next hypothesis/portfolio target.
+- `next experiment contour`: Agent-2's next hypothesis/portfolio target.
 
 Policy:
 - Fatal methodology mismatch is allowed only for `current AB contour` contract mismatch.
@@ -55,7 +55,7 @@ Use when effect cannot be measured:
 Required actions:
 - Uplift fields must be null.
 - Evaluator must be at most `STOP` or `HOLD_RISK`.
-- Commander must never output `RUN_AB` / `ROLLOUT_CANDIDATE`.
+- Agent-3 must never output `RUN_AB` / `ROLLOUT_CANDIDATE`.
 - Reports must show fatal measurement banner.
 
 ### BLOCKED_BY_DATA
@@ -84,7 +84,7 @@ Examples:
 
 ## Decision ceilings
 
-- Narrative ungrounded -> Commander max `HOLD_RISK`.
+- Narrative ungrounded -> Agent-3 max `HOLD_RISK`.
 - Assignment recovered post-hoc -> no GO/ROLLOUT.
 - Methodology mismatch -> STOP/HOLD only.
 
@@ -99,8 +99,8 @@ If one fails, overall acceptance is `FAIL`.
 | `ab_status_valid` | Avoid fake AB conclusions | AB artifact must exist and status must be valid |
 | Blind spot uplift null (`MISSING_ASSIGNMENT`/`METHODOLOGY_MISMATCH`) | No causal claim without observability | Uplift and CI fields must be null |
 | Blind spot evaluator guard | Prevent unsafe promotion | Evaluator must be `STOP` or `HOLD_RISK` |
-| Commander unsafe decision guard | Final decision cannot override safety | No `RUN_AB`/`ROLLOUT_CANDIDATE` when evaluator/measurement status forbids it |
-| Cross-artifact `run_id` consistency | Prevent mixed-artifact contamination | Evaluator/Commander/AB must refer to current run |
+| Agent-3 unsafe decision guard | Final decision cannot override safety | No `RUN_AB`/`ROLLOUT_CANDIDATE` when evaluator/measurement status forbids it |
+| Cross-artifact `run_id` consistency | Prevent mixed-artifact contamination | Evaluator/Agent-3/AB must refer to current run |
 | Cross-artifact `experiment_id` consistency | Prevent wrong AB binding | Evaluator and AB must refer to same experiment |
 | Narrative ungrounded ceiling | Avoid rollout from ungrounded reasoning | If ungrounded, commander must be <= `HOLD_RISK` |
 
@@ -417,9 +417,9 @@ Observed request profile from current `run_all_v13_agent_*` logs (12 runs analyz
 
 Request topics per run (current pipeline):
 
-1. Captain sanity validation of DQ/realism issues.
-2. Doctor methodology/hypothesis reasoning (selection + summary path).
-3. Commander decision proposal and PM rationale layer.
+1. Agent-1 sanity validation of DQ/realism issues.
+2. Agent-2 methodology/hypothesis reasoning (selection + summary path).
+3. Agent-3 decision proposal and PM rationale layer.
 4. Optional extra calls from retries/fallback branches.
 
 Chunking and memory rules for roadmap implementation:
@@ -448,9 +448,9 @@ To prevent retry storms and cyclic reprocessing:
 
 ### N) Historical retrieval and mitigation policy (runtime)
 
-1. Historical context is mandatory input for Doctor (`historical_context_pack_v1`) and must be built as:
+1. Historical context is mandatory input for Agent-2 (`historical_context_pack_v1`) and must be built as:
    `semantic retrieval + structured fact pull` (`retrieval_mode=semantic_hybrid_mvp` in current runtime), not numeric-overlap-only heuristics.
-2. Commander/Doctor must expose machine-readable proof of context usage:
+2. Agent-3/Agent-2 must expose machine-readable proof of context usage:
    - `trace_refs[]` containing reference to `historical_context_pack`,
    - `artifact_hash_refs[]` containing `artifact_ref + sha256` for `historical_context_pack`,
    - `historical_context.used=true` and `pack_ref`.
@@ -459,7 +459,7 @@ To prevent retry storms and cyclic reprocessing:
    - hash matches sidecar,
    - ref is used in reasoning/evidence sections.
    Formal reference without hash/evidence is `HISTORICAL_CONTEXT_INTEGRITY_FAIL`.
-3. For `STOP/HOLD_*` decisions Commander must provide mitigation-by-design:
+3. For `STOP/HOLD_*` decisions Agent-3 must provide mitigation-by-design:
    - either >=2 mitigation proposals with `applicability`, `risk_tradeoff`, `confidence`, `evidence_refs`, `required_data`,
    - or fallback `insufficient_evidence` with non-empty `required_data[]` + `next_validation_plan`.
 4. Missing mitigation policy is fail-closed.

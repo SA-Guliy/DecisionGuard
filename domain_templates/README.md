@@ -7,4 +7,4 @@
 - Values in public templates are synthetic/illustrative demo thresholds only.
 - No proprietary supplier/category naming or private operating coefficients should be stored here.
 
-Core agents (`Captain`, `Doctor`, `Commander`, evaluator/status taxonomy) should read domain-specific goal/metric/guardrail mappings from this folder through `src/domain_template.py`.
+Core agents (`Agent-1`, `Agent-2`, `Agent-3`, evaluator/status taxonomy) should read domain-specific goal/metric/guardrail mappings from this folder through `src/domain_template.py`.
