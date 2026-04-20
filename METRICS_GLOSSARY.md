@@ -1,25 +1,159 @@
-# Metrics Glossary (Canonical)
+# METRICS_GLOSSARY (Canonical)
 
-This glossary defines classification metrics used across public DecisionGuard documents.
+This document defines the DecisionGuard metric stack used in public evaluation narratives.
 
-## Core Definitions
+The key rule is simple:
+- outcome quality alone is necessary but not sufficient;
+- reasoning quality and semantic depth are evaluated separately.
 
-- `FNR` (False Negative Rate): risky experiments incorrectly approved.
-  - Formula: `FN / risky_cases`
-  - `FN` means: `expected_block=true` and model decision is not blocking (`predicted_block=false`).
-- `FPR` (False Positive Rate): safe experiments incorrectly blocked.
-  - Formula: `FP / safe_cases`
-  - `FP` means: `expected_block=false` and model decision is blocking (`predicted_block=true`).
+---
 
-## Reporting Rule
+## 1) L0 — Outcome KPI (Decision Quality)
 
-- Every published FNR/FPR value must include denominator context:
-  - Example: `10% (1/10 risky)`
-  - Example: `40% (4/10 safe)`
+### 1.1 `FPR_non_go` (safe case blocked by mistake)
+- Formula: `FP_non_go / safe_cases`
+- `FP_non_go` means:
+  - `expected_block = false`
+  - decision is blocking (`HOLD_NEED_DATA`, `STOP_ROLLOUT`, `STOP`, `NO_GO`)
 
-## Source of Truth
+### 1.2 `FNR` (risky case approved by mistake)
+- Formula: `FN / risky_cases`
+- `FN` means:
+  - `expected_block = true`
+  - decision is non-blocking (`GO` / rollout-allowing path)
 
-- Canonical batch metrics source:
-  - `examples/investor_demo/reports_for_agents/batch_summary.json`
-- Human-facing reports must match this source for the same batch.
+### 1.3 `FPR_stop_only` (strict false stop)
+- Formula: `false_stop_on_safe / safe_cases`
+- `false_stop_on_safe` means:
+  - safe case with `decision = STOP_ROLLOUT`
 
+### 1.4 `Availability_KPI`
+- Formula: `completed / (completed + failed_api_cases)`
+
+### 1.5 Reporting rule
+- Always publish denominator context.
+- Example: `FPR_non_go = 10% (1/10 safe)`
+- Example: `FNR = 0% (0/10 risky)`
+
+---
+
+## 2) L1 — Staff Reasoning Quality (Structure + Grounding)
+
+### 2.1 Case-level score dimensions
+- `reasoning_completeness_score`: required reasoning fields completeness.
+- `causal_consistency_score`: causal interpretation + counterfactual + why-not-opposite consistency.
+- `guardrail_grounding_score`: explicit guardrail grounding in evidence.
+- `evidence_specificity_score`: specificity of metric/evidence references.
+- `decision_evidence_alignment_score`: alignment of decision with evidence.
+- `counterfactual_strength_score`: concrete, testable counterfactual quality.
+- `uncertainty_honesty_score`: concrete uncertainty disclosure quality.
+
+### 2.2 Core formulas (abstract)
+- `reasoning_completeness_score = checks_pass / checks_total`
+- `staff_reasoning_score(case) = weighted_mean(completeness, causal_consistency, guardrail_grounding, rubric_v2_components)`
+- `staff_reasoning_score(batch) = mean(staff_reasoning_score(case_i))`
+- `below_target_rate = below_target_cases / total_cases`
+- `case_pass_rate = pass_cases / total_cases`
+
+---
+
+## 3) L2 — Semantic Depth (Agent-2 / Agent-3)
+
+L2 separates semantic quality from format compliance.
+
+### 3.1 Agent-2 depth
+- `A2_format_score`
+- `A2_semantic_score`
+- `A2_overall_score = weighted_mean(format, semantic)`
+
+### 3.2 Agent-3 depth
+- `A3_format_score`
+- `A3_semantic_score`
+- `A3_overall_score = weighted_mean(format, semantic)`
+
+### 3.3 Batch-level hard guards
+- `template_repetition_ratio`
+- `generic_counterfactual_ratio`
+- `generic_uncertainty_ratio`
+- `evidence_link_coverage`
+- `decision_justification_mismatch_count`
+
+These guards are designed to reduce template gaming and ungrounded narrative pass-through.
+
+---
+
+## 4) L3 — Release Gate (Final Admission)
+
+A wave is admissible only when policy thresholds pass together:
+- outcome KPI (`FPR_non_go`, `FNR`, optional `FPR_stop_only`);
+- reasoning quality (`staff_reasoning_score`, `below_target_rate`, `case_pass_rate`);
+- semantic depth (`A2/A3 semantic thresholds` and hard-guard ratios);
+- runtime integrity (`cloud_path`, `provisional`, `fresh_runtime`, stability window).
+
+---
+
+## 5) Hallucination Control (Operational View)
+
+DecisionGuard does not use one single `hallucination_rate` gate field today.
+
+Operational anti-hallucination is enforced through:
+- `evidence_link_coverage`,
+- `generic_counterfactual_ratio`,
+- `generic_uncertainty_ratio`,
+- `decision_justification_mismatch_count`,
+- retrieval grounding and traceability checks.
+
+---
+
+## 6) Metrics Pack V2 (Advisory-First)
+
+### 6.1 Calibration (confidence trustworthiness)
+- `Brier Score = (1/N) * Σ (p_i - y_i)^2`
+- `ECE = Σ (|B_m|/N) * |acc(B_m) - conf(B_m)|`
+- Reliability curve (bin-level confidence vs observed frequency)
+
+### 6.2 Retrieval Grounding
+- `faithfulness = supported_claims / total_claims`
+- `context_precision = relevant_retrieved / retrieved_total`
+- `context_recall = relevant_retrieved / relevant_available`
+
+### 6.3 Scenario Reliability
+- `pass@k = cases_with_at_least_one_pass_in_k_runs / total_cases`
+- `stable_pass_rate = cases_passed_in_all_k_runs / total_cases`
+- `decision_jitter_rate = cases_with_multiple_decisions_across_k_runs / total_cases`
+
+### 6.4 Decision Diagnostics
+- `MCC = (TP*TN - FP*FN) / sqrt((TP+FP)(TP+FN)(TN+FP)(TN+FN))`
+- Plus confusion-matrix diagnostics (`TP/FP/TN/FN`)
+
+---
+
+## 7) Source-of-Truth Rule
+
+Public-facing metric claims must be tied to machine-checkable tracked artifacts with valid sidecar integrity.
+
+For canonical benchmark claims, source and narrative must stay consistent within the same release/publish contour.
+
+---
+
+## 8) Metrics Pack V2 Status (Auto-Synced)
+
+<!-- AUTO_METRICS_V2_EN:START -->
+
+### Metrics Pack V2 (Auto-Synced)
+
+This block is auto-generated by `scripts/sync_metrics_docs.py`.
+
+| Component | Formula set | Scorer | Contract | Artifact | Status |
+|---|---|---|---|---|---|
+| `Calibration` | `Brier + ECE + calibration curve` | `scripts/score_calibration_metrics.py` | `configs/contracts/calibration_metrics_v1.json` | `data/agent_quality/<batch_id>_calibration_metrics.json` | `IMPLEMENTED` |
+| `Retrieval Grounding` | `faithfulness + context_precision + context_recall` | `scripts/score_retrieval_grounding.py` | `configs/contracts/retrieval_grounding_metrics_v1.json` | `data/agent_quality/<batch_id>_retrieval_grounding_metrics.json` | `IMPLEMENTED` |
+| `Scenario Reliability` | `pass@k + stable_pass_rate + jitter` | `scripts/score_scenario_reliability.py` | `configs/contracts/scenario_reliability_metrics_v1.json` | `data/agent_quality/<batch_id>_scenario_reliability_metrics.json` | `IMPLEMENTED` |
+| `Decision Diagnostics` | `MCC + confusion matrix diagnostics` | `scripts/score_decision_diagnostics.py` | `configs/contracts/decision_diagnostics_v1.json` | `data/agent_quality/<batch_id>_decision_diagnostics.json` | `IMPLEMENTED` |
+
+- Release checker advisory mode: `ENABLED_WARN_ONLY`.
+- Blocking thresholds are unchanged; v2 metrics remain warn-only in release checker.
+- Refresh: `python3 scripts/sync_metrics_docs.py --apply`
+- Verify: `python3 scripts/sync_metrics_docs.py --check`
+
+<!-- AUTO_METRICS_V2_EN:END -->
