@@ -3,6 +3,19 @@ cursorrules
 AUDIT.md
 REPO_TREE.md
 Repo_Tree._Details.md
+ARCHITECTURE.md
+AGENT_EVAL.md
+METRICS_GLOSSARY.md
+docs/METRICS_GLOSSARY.md
+docs/ab_data_contract_v1.md
+docs/metrics_contract_v1.md
+scripts/README.md
+examples/investor_demo/DEMO_GUIDE.md
+examples/investor_demo/DEMO_GUIDE.md.sha256
+docs/ab_methodology_spec.md
+docs/architecture_scheme1.md
+docs/architecture_scheme1.mmd
+docs/architecture_scheme1.png
 
 # Quarantine and archive zones
 _PROJECT_TRASH/**

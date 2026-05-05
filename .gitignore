@@ -40,13 +40,13 @@ github_publish/
 !domain_templates/**/*.json
 !docs/**/*.md
 !README.md
-!ARCHITECTURE.md
 _PROJECT_TRASH/
 _ARCHIVE_TO_MOVE_OUT_*/
 WAVE*_DRYRUN_MANIFEST_*.md
 
 # Private PRD / strategy (must stay out of public repo)
 .cursor/prd/
+.cursor/roles/
 private_prd/
 internal_strategy/
 internal_business_metrics/
@@ -89,15 +89,48 @@ PRD.md
 SIMULATION_ENGINE.md
 SIMULATION_ENGINE_RU.md
 RU_LOCAL_DOCS/
+DOCS_INDEX_RU.md
 docs/archive/
 docs/EXECUTIVE_DEMO_RUNBOOK.md
 docs/executable_prd_v1.md
 docs/security_migration_note.md
+docs/change_control_policy.md
+docs/ci_test_policy.md
+docs/policy_threshold_signoff_v1_6.md
+docs/METRICS_GLOSSARY.md
+docs/ab_data_contract_v1.md
+docs/metrics_contract_v1.md
+ARCHITECTURE.md
+AGENT_EVAL.md
+METRICS_GLOSSARY.md
+scripts/README.md
+examples/investor_demo/DEMO_GUIDE.md
+examples/investor_demo/DEMO_GUIDE.md.sha256
+docs/ab_methodology_spec.md
+docs/architecture_scheme1.md
+docs/architecture_scheme1.mmd
+docs/architecture_scheme1.png
+github_publish_ci/
+requirements-ml.txt
+requirements-ml-shadow.txt
+.claude/
+.cursorignore/
+.cursorignore
+
+# Future tactical additions default to private unless explicitly re-approved
+configs/contracts/
+scripts/
+src/
+tests/
+domain_templates/
+examples/investor_demo/
+docs/
 
 # Database schema (internal)
 sql/
 IMPLEMENTATION_PLAN.md
 EVALUATION_REPORT.md
+CHANGE_NOTICE.md
 data/poc/history_sot_v1.json
 data/poc/history_vector_index_v1.json
 
@@ -126,3 +159,7 @@ examples/investor_demo/DEMO_MANIFEST.json.sha256
 # internal docs
 /docs/EXECUTIVE_DEMO_RUNBOOK.md
 /docs/event_bus_contracts_v2.md
+
+# virtual environments
+.venv/
+.venv-ml/

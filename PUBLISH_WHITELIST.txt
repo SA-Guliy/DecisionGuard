@@ -1,27 +1,10 @@
 # Public top-level documents
 README.md
-PRD.md
-ARCHITECTURE.md
-AGENT_EVAL.md
-METRICS_GLOSSARY.md
+LICENSE
 .env.example
 .gitignore
-CLEANUP_RUNBOOK.md
 PUBLISH_WHITELIST.txt
 PUBLISH_DENYLIST.txt
-PUBLISH_MANIFEST.md
-PUBLISH_AUDIT_CHECKLIST.md
-MIGRATION_MANIFEST.json
-MIGRATION_MANIFEST.md
-rollback.sh
 
-# Core product code and contracts
-src/**
-scripts/**
-tests/**
-configs/**
-domain_templates/**
+# Public-safe repo metadata only
 .github/workflows/**
-
-# Single Source of Truth for public demo
-examples/investor_demo/**
