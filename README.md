@@ -1,6 +1,6 @@
 # DecisionGuard
 
-> AI-native runtime for product experimentation and governance: from hypothesis and test launch to result interpretation and final rollout decision.
+> AI-native runtime for product experimentation and governance: from hypothesis formation to a safer rollout decision.
 
 [![CI](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml/badge.svg)](https://github.com/SA-Guliy/DecisionGuard/actions/workflows/ci-governance.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-311/)
@@ -11,10 +11,11 @@
 
 > **Project status**
 >
-> DecisionGuard is **not finished** and is in **active development**.
-> The public repository shows architecture, PoC results, core engineering choices, and the system direction, while part of the capabilities is still being calibrated, hardened, and validated.
+> DecisionGuard is in active development.
+> The public version of the project exposes the product thesis, engineering depth, and strategic direction, but not the full implementation tactics.
 >
-> The most accurate framing today is: a **strong R&D / PoC runtime** with working governance logic, synthetic evaluation, and fail-closed orchestration, but not yet a finalized production product.
+> The most accurate framing today is:
+> **a strong R&D / PoC runtime for governance-driven experimentation decisions, not a finished production product.**
 
 ---
 
@@ -22,441 +23,251 @@
 
 - [What It Is](#what-it-is)
 - [Why It Matters](#why-it-matters)
-- [Who Benefits and Where](#who-benefits-and-where)
+- [Who Benefits](#who-benefits)
 - [How It Works](#how-it-works)
-- [Evidence-Grounded Decisions](#evidence-grounded-decisions)
-- [Paired Experiment Mode](#paired-experiment-mode)
-- [PoC Results](#poc-results)
-- [What Is Being Improved Now](#what-is-being-improved-now)
+- [Decisions Built on Multiple Evidence Layers](#decisions-built-on-multiple-evidence-layers)
+- [What The PoC Already Proves](#what-the-poc-already-proves)
+- [What Is Being Strengthened Now](#what-is-being-strengthened-now)
 - [Synthetic Evaluation Environment](#synthetic-evaluation-environment)
-- [Engineering Depth](#engineering-depth)
-- [Key Architectural Choices](#key-architectural-choices)
+- [Engineering Principles](#engineering-principles)
 - [System Boundaries and Current Limits](#system-boundaries-and-current-limits)
 - [Comparison](#comparison)
-- [Quick Start](#quick-start)
 - [Security and Path to Production](#security-and-path-to-production)
-- [Repository Structure](#repository-structure)
-- [Demo Artifacts](#demo-artifacts)
-- [Contributing](#contributing)
+- [Discussion](#discussion)
 - [License](#license)
 
 ---
 
 ## What It Is
 
-**DecisionGuard** is an AI-native runtime for experimentation governance.
+**DecisionGuard** is an AI-native runtime for decision quality in experimentation.
 
-It supports the full decision lifecycle:
+Its role is not simply to help run an A/B test, but to determine whether the final decision can actually be trusted given:
 
-- prepare and validate input data;
-- draft and refine a hypothesis;
-- run a prelaunch governance audit;
-- run an A/B experiment;
-- interpret outcomes with guardrails, historical precedents, and risk context;
-- produce a fail-closed rollout decision.
+- data quality and completeness;
+- guardrail metrics;
+- statistical signal;
+- historical context;
+- operational and risk context.
 
 DecisionGuard can:
 
 - sit on top of an existing experimentation stack;
-- own part of the lifecycle in a more autonomous AI-driven contour;
-- increase decision quality for analysts, PMs, and experimentation teams.
+- own part of the decision lifecycle in a more autonomous AI-driven contour;
+- reduce the cost of bad rollout decisions and improve reproducibility.
 
-Core value is not only test execution, but **decision quality governance before, during, and after the experiment**.
+The core idea is simple:
+**the main value is not test execution, but decision quality after the test.**
 
 ---
 
 ## Why It Matters
 
-Classic experimentation tooling answers:
+Classical experimentation tools usually answer one question:
 
-_"Did the variant win?"_
+_“Did the variant win?”_
 
-DecisionGuard answers the more expensive business question:
+DecisionGuard answers a more expensive business question:
 
-_"Is this decision truly justified and safe under guardrails, data quality, historical patterns, operational constraints, and risk context?"_
+_“Is this decision truly justified and safe to ship?”_
 
-A local lift in the primary metric is not enough for rollout.
+A local lift in the primary metric does not automatically mean the decision is good.
 
-The most expensive mistakes usually happen when:
+In practice, the most expensive mistakes happen when:
 
-- primary metric grows while decision quality drops;
-- short-term wins hide guardrail downside;
-- rollout looks statistically successful but is operationally or economically risky;
-- interpretation is rushed and not systematically checked.
+- the primary metric improves while true decision quality drops;
+- a short-term win hides guardrail downside;
+- a result looks statistically successful but is operationally or economically risky;
+- interpretation happens too quickly and without systematic checks.
 
-DecisionGuard is designed for exactly these cases.
+DecisionGuard is built for exactly these scenarios.
 
 ---
 
-## Who Benefits and Where
+## Who Benefits
 
 DecisionGuard is useful beyond experimentation teams.
 
-It helps:
+It is valuable for:
 
-- **analysts**: formulate/refine hypotheses, interpret outcomes deeper, and detect hidden downside behind local wins;
-- **product managers**: quickly see whether a decision is protected by metrics, guardrails, and downstream risk checks;
-- **growth / experimentation teams**: reduce false rollout cost and make decisions more reproducible and auditable;
-- **organizations with high decision quality standards**: where uplift alone is not enough and mechanism + risk need to be understood.
+- **analysts** who need deeper interpretation and want to avoid mistaking local uplift for a safe rollout;
+- **product managers** who need to see whether a decision is protected by data, guardrails, and downstream risk checks;
+- **growth / experimentation teams** that want to reduce the cost of false rollout decisions;
+- **organizations with a high cost of error**, where uplift without governance is not enough.
 
-DecisionGuard is **domain-agnostic**.
-
-The architecture relies on policy contracts, evidence-driven reasoning, fail-closed gates, and synthetic evaluation, so it can be adapted to different verticals and experimentation programs.
+DecisionGuard is designed as a **domain-agnostic** layer.
+It can be adapted to different verticals wherever experimentation, risk, and costly operating decisions intersect.
 
 ---
 
 ## How It Works
 
-DecisionGuard follows governance state-machine `S1 → S2 → S3 → S4 → S5`:
+DecisionGuard is a multi-layer decision pipeline where LLMs are used only when deterministic logic is not enough.
 
-- **S1 Data Hygiene (Agent-1)**: input quality, integrity, context completeness, and launch preconditions;
-- **S2 Hypothesis Draft (Agent-2)**: hypothesis, expected effect logic, risk framing, interpretation conditions;
-- **S3 Prelaunch Audit (Agent-3)**: launch-readiness audit of design, guardrails, and risks;
-- **S4 Experiment Run**: execution and signal collection;
-- **S5 Final Governance (Agent-3)**: final interpretation and rollout verdict.
-
-SoT note for reviewers:
-- `S1 → S5` is the conceptual governance lifecycle.
-- Current public runtime execution contour is broader than this simplified diagram and includes additional gate roles and checks (for example `evaluator`, `acceptance`, `pre_publish`) in fail-closed order.
-- Role mapping in current tracked runtime:
-  - `Agent-1` ↔ `captain`
-  - `Agent-2` ↔ `doctor`
-  - `Agent-3` ↔ `commander`
-
-Simplified flow:
-
-```mermaid
-flowchart TD
-    A([Experiment context<br/>metrics + hypothesis + constraints]) --> B[S1 Agent-1<br/>Data Hygiene]
-    B --> C[S2 Agent-2<br/>Hypothesis Draft]
-    C --> D[S3 Agent-3<br/>Prelaunch Audit]
-    D --> E[S4 Experiment Run]
-    E --> F[S5 Agent-3<br/>Final Governance]
-    F --> G([Decision Card<br/>+ ROI / Risk Summary])
-
-    style A fill:#f0f4ff,stroke:#6b7cff
-    style G fill:#f0fff4,stroke:#38a169
-    style B fill:#fff8f0,stroke:#e07b00
-    style C fill:#fff8f0,stroke:#e07b00
-    style D fill:#fff8f0,stroke:#e07b00
-    style F fill:#fff8f0,stroke:#e07b00
+```text
+┌─────────────────────────────────────────────────┐
+│  Layer 1: Data and context                      │
+│  → operational signals                          │
+├─────────────────────────────────────────────────┤
+│  Layer 2: Deterministic / statistical controls  │
+│  → validation, risk checks, aggregated picture  │
+├─────────────────────────────────────────────────┤
+│  Layer 3: Reasoning and governance              │
+│  → interpretation and final decision            │
+└─────────────────────────────────────────────────┘
 ```
 
-Every call passes common control layers:
+At a high level:
 
-| Layer | What it does |
-|------|---------------|
-| **Privacy** | Sanitizes sensitive values before cloud LLM calls and restores only inside controlled runtime |
-| **Resilience** | Supports fallback chain Groq → Ollama → deterministic local; release-candidate mode applies stricter policy constraints and cloud-preflight requirements |
-| **Integrity** | Verifies artifact integrity and fails closed on tamper / missing sidecar |
-| **Audit** | Writes audit trail for run, policy, backend, time, cost, and final status |
+- the system first checks whether the context and data are trustworthy;
+- it then assembles multiple independent layers of evidence;
+- only after that does it produce a governance decision in fail-closed mode.
 
----
+If key context is incomplete or integrity is broken, the system should not produce a false `GO`.
 
-## Evidence-Grounded Decisions
-
-DecisionGuard does not rely only on current-run metrics.
-
-Before final verdict, it pulls **historical precedents** through retrieval and uses them as additional evidence.
-
-Benefits:
-
-- decision is not based on one current snapshot;
-- similar past experiments become part of reasoning;
-- final decision card can cite evidence rather than generic language;
-- lower risk of speculative or hallucinated interpretation.
-
-So the system answers not only "what happened now", but also "how this outcome aligns with already observed risk/success patterns".
+Publicly, only the high-level architecture is exposed.
+Exact tactical mechanics, internal contracts, and fine-grained decision tuning remain private.
 
 ---
 
-## Paired Experiment Mode
+## Decisions Built on Multiple Evidence Layers
 
-DecisionGuard supports **paired experiment mode**: control and treatment run under one experiment ID, and live deltas are computed before final reasoning.
+DecisionGuard does not decide on a single signal.
+It combines multiple independent layers of evidence at once.
 
-The system reasons on three evidence layers together:
+In practical terms, that means it looks not only at the local experiment result, but also at:
 
-1. **Live primary metric**: treatment vs control delta;
-2. **Live guardrail metrics**: protective metric breaches;
-3. **Historical patterns**: retrieved similar scenarios.
+- the primary experimental signal;
+- protective guardrail signals;
+- historical analogs and context;
+- signs that a formally successful outcome may still be unsafe.
 
-This enables governance-style reasoning instead of single-metric checks.
+This multi-layer logic is what differentiates DecisionGuard from a simple answer to:
+_“did the variant win?”_
 
-If treatment fails or data is incomplete, system does not emit false `GO`.
-The decision ceiling is forced to `HOLD_NEED_DATA` (or equivalent fail-closed status).
+If evidence is insufficient, the system should move into a fail-closed trajectory rather than an optimistic rollout path.
 
 ---
 
-## PoC Results
+## What The PoC Already Proves
 
-### What Is Already Demonstrated
+At the current stage, the project already demonstrates:
 
-Current PoC already demonstrates:
-
-- working governance flow;
-- synthetic benchmark evaluation;
+- a working governance flow;
 - fail-closed decisioning;
-- historical evidence retrieval;
-- paired experiment logic;
-- auditability and fallback resilience.
+- synthetic evaluation;
+- evidence-grounded interpretation;
+- resilience under incomplete context;
+- auditability and controlled fallback behavior.
 
-### Decision KPI
+Important:
+the public version should not be read as a claim of a finished production-grade product.
 
-On current benchmark waves, DecisionGuard shows strong **decision KPI** stability.
-These numbers must be interpreted **separately** from semantic depth gates and reasoning-quality sign-off.
+The correct external interpretation today is:
 
-| Wave set | Gate contract | FPR_non_go | FNR |
-|---|---|---|---|
-| `A5 / B5 / C5` | `release-candidate (pre-depth sign-off)` | `0.10 / 0.10 / 0.00` | `0.00 / 0.00 / 0.00` |
-
-> Historical baseline and full contract migration are tracked in `RU_LOCAL_DOCS/EXECUTION_TRACKER_RU.md` and freeze artifacts, to avoid publishing unverified comparisons in README.
-
-How to read this correctly:
-
-- decision chain shows strong safety/stability improvement on legacy benchmark waves;
-- this does **not** automatically mean semantic depth gate is closed;
-- decision KPI and reasoning depth are **two different signals**, not a single “release-ready score”.
-
-Correct public interpretation:
-
-> **Decision KPI are already strong on the current synthetic benchmark, while semantic depth reasoning and depth-aware sign-off are still being strengthened as a separate track.**
-
-### What to Keep in Mind About Reasoning Score
-
-Average `staff_reasoning_score` increased significantly versus older `system.reasoning_quality_score`.
-
-But this must **not** be interpreted as pure "model intelligence growth".
-
-The result is influenced by multiple factors:
-
-- new rubric and scale;
-- more structured reasoning format;
-- partial template-like fields in some reasoning outputs;
-- reduced effect of technical defaults and fallback noise that are not direct reasoning depth.
-
-So the accurate external wording is:
-
-> **DecisionGuard materially improved governance score and decision stability on current synthetic benchmark; semantic reasoning depth strengthening remains in progress.**
+> DecisionGuard already shows a strong engineering foundation and a credible PoC contour for governance-driven experimentation, while parts of the semantic reasoning and production-hardening tracks are still being strengthened.
 
 ---
 
-## What Is Being Improved Now
+## What Is Being Strengthened Now
 
-Current focus is not only score growth, but making depth evaluation more robust against templating and formal pass-through.
+The current focus is not simply on raising scores, but on making decision quality more robust against:
 
-In progress:
+- templated reasoning;
+- weak evidence linkage;
+- overconfidence in partial signals;
+- formal quality pass-through without real depth.
 
-- separate scoring for **Agent-2** and **Agent-3**;
-- higher weight on **semantic depth** (not only format compliance);
-- split score into:
-  - `FormatScore`
-  - `SemanticDepthScore`
-- shift decision gates to semantic criteria;
-- anti-template constraints;
-- mandatory case-specific evidence linkage;
-- human blind-audit on random samples;
-- drift checks between auto-score and human-score.
-
-Target direction:
-
-- **A2_HypothesisDepthScore** for hypothesis quality and analysis logic;
-- **A3_GovernanceDepthScore** for final governance depth;
-- stronger weighting of final semantic depth over superficial structure.
+In other words, the goal is not only to make the system look smart, but to make it more trustworthy.
 
 ---
 
 ## Synthetic Evaluation Environment
 
-DecisionGuard uses a **dynamic synthetic data environment** for realistic evaluation.
+DecisionGuard uses its own synthetic environment to evaluate decisions under changing operational conditions rather than static examples.
 
-This is not a static fixture set.
+This matters because real experimentation decisions almost never happen in a clean laboratory setup.
 
-The simulator models changing conditions where outcomes are affected by:
+In such an environment, outcomes may be influenced by:
 
-- user behavior and segmentation;
-- churn/reactivation;
-- demand spikes and drops;
-- competitor pressure;
-- supply constraints;
+- changing user behavior;
+- demand waves;
 - operational noise;
-- delayed effects hidden in short A/B windows.
+- supply-side constraints;
+- delayed effects that do not show up in a short A/B window.
 
-This is needed to validate not only "which variant won", but whether decisions remain robust, realistic, and safe under harder context.
-
-Publicly, we expose the high-level design: synthetic evaluation engine generates `safe / risky / borderline` scenarios and stress-tests the agent chain in near-realistic conditions.
-
-Part of simulator mechanics, environment parameterization, and domain specifics intentionally stays private.
+Only the high-level idea of synthetic evaluation is public.
+The underlying domain physics, scenario generation, and tactical environment tuning are intentionally kept private.
 
 ---
 
-## Engineering Depth
+## Engineering Principles
 
-| Layer | Implemented |
-|------|-------------|
-| **Policy-as-Code** | Machine-readable policy contracts, domain templates, externalized guardrail and decision logic |
-| **Fail-Closed Runtime** | No silent pass-through: missing data, integrity gaps, and policy violations block false `GO` |
-| **Security** | Sanitization before cloud calls, encryption for sanitization maps, audit trail, access control |
-| **Resilience** | Fallback chain and controlled reconciliation after cloud recovery |
-| **Observability** | Backend, latency, token usage, estimated cost, run status, blocked-by logging |
-| **Evaluation** | Unit, integration, adversarial, and e2e; blocking CI currently covers core governance checks, contract integrity, and smoke checks; full regression/eval contour runs separately |
-| **Evidence Layer** | Historical retrieval and evidence-grounded reasoning instead of isolated interpretation |
-| **Synthetic Evaluation** | Dynamic scenario generator for complex chain-level evaluation |
+At the level of engineering philosophy, DecisionGuard is built around a few hard principles:
 
----
-
-## Key Architectural Choices
-
-- **AI-native experimentation + governance**: system participates in hypothesis draft, prelaunch audit, and final governance.
-- **Policy-as-Code**: critical business logic is not buried in ad-hoc if/else chains.
-- **Fail-Closed by Default**: incomplete context or integrity/policy issues move decision to hold-path, not optimistic pass.
-- **Evidence-Grounded Decisions**: reasoning must cite concrete signals, not generic text.
-- **Replaceable-by-Python Mindset**: LLM layer must show measurable added value over deterministic logic.
-- **Runtime Resilience**: controlled degraded mode under external failures, instead of total stop.
-- **Auditability**: decisions, interim states, and block reasons are post-factum verifiable.
-- **Synthetic-First Evaluation**: difficult risky/safe/borderline scenarios are tested beyond static hand-made fixtures.
+- **Fail-Closed by Default**: if the context cannot be trusted, the system blocks rather than passes;
+- **Replaceable-by-Python Mindset**: LLMs are used only where they add measurable value beyond deterministic logic;
+- **Evidence-Grounded Decisions**: reasoning must be tied to signals, not generic phrasing;
+- **Auditability**: decisions must be reviewable after the fact;
+- **Security by Design**: sensitive data and cloud inference paths must not be transparent by default.
 
 ---
 
 ## System Boundaries and Current Limits
 
-Read the current state honestly.
+DecisionGuard should be read honestly.
 
-At this stage:
+At the current stage:
 
-- project is **not finished**;
-- reasoning evaluation is **still being refined**;
-- part of high score can come from formatting/rubric alignment, not only deeper reasoning;
-- part of calibration work is still in progress;
-- public repository does not claim completed real-world production validation;
-- synthetic benchmark is already useful for chain validation, but does not replace full real-world validation.
+- the project is not finished;
+- reasoning quality and semantic depth are still being strengthened;
+- production validation with external real-world customers is not claimed as complete;
+- the synthetic benchmark is useful for validating the contour, but does not replace real-world validation;
+- part of the tactical mechanics is intentionally not exposed in the public version.
 
-Current correct positioning:
+So the most accurate positioning today is:
 
-> **A strong AI experimentation/governance PoC with deep engineering and active semantic reasoning quality hardening.**
+> **a strong AI / experimentation governance PoC with deep engineering logic and clear potential as an enterprise DSS-class system.**
 
 ---
 
 ## Comparison
 
-| | DecisionGuard | Classical experimentation platform | Custom rules engine |
-|--|--------------|------------------------------------|---------------------|
-| Hypothesis draft support | ✅ | Partial / stack-dependent | ❌ |
-| Prelaunch governance | ✅ | Partial / process-dependent | ❌ |
-| Final governance decision | ✅ | Partial | Partial |
-| Historical evidence retrieval | ✅ | Usually no | ❌ |
-| Fail-closed default | ✅ | Not always | Depends |
-| Synthetic evaluation engine | ✅ | Usually no | ❌ |
-| Privacy layer for LLM calls | ✅ | N/A | N/A |
-| Audit trail for decision chain | ✅ | Partial | Depends |
-| Autonomous AI-driven contour | Partial / evolving | ❌ | ❌ |
+| | Classical experimentation platform | Rules engine | DecisionGuard |
+|---|---|---|---|
+| Primary goal | Measure test results | Apply predefined rules | Produce a higher-quality rollout decision |
+| Risk-context handling | Limited | Partial | Systematic |
+| Fail-closed logic | Not always | Depends on implementation | Foundational principle |
+| Historical / contextual evidence | Usually weak | Usually absent | Built into the decision surface |
+| AI-driven governance | Usually no | No | Yes |
 
-> DecisionGuard can run on top of Statsig, LaunchDarkly, or internal stacks, and can also own a more autonomous contour:
-> **hypothesis draft → prelaunch audit → experiment run → final governance decision**.
-
----
-
-## Quick Start
-
-### 1. Set LLM API key
-
-DecisionGuard supports cloud LLM backend and fallback path.
-Without key, part of reasoning is limited or routed to local/deterministic mode.
-
-```bash
-echo "GROQ_API_KEY=gsk_..." > ~/.groq_secrets
-echo "LLM_ALLOW_REMOTE=1"  >> ~/.groq_secrets
-chmod 600 ~/.groq_secrets
-```
-
-### 2. Configure environment
-
-Copy `.env.example` and define main parameters:
-
-```bash
-CLIENT_DB_HOST=...
-CLIENT_DB_PORT=5432
-CLIENT_DB_NAME=...
-CLIENT_DB_USER=...
-CLIENT_DB_PASS=...
-SANITIZATION_KMS_MASTER_KEY=local_demo_key
-SANITIZATION_READER_ROLE=runtime_orchestrator
-```
-
-### 3. Pick domain template
-
-```bash
-domain_templates/darkstore_fresh_v1.json
-```
-
-### 4. Run orchestration
-
-```bash
-python3 scripts/run_all.py \
-  --run-id demo_run_001 \
-  --experiment-id exp_demo_001 \
-  --domain-template domain_templates/darkstore_fresh_v1.json \
-  --allow-remote-llm 1
-```
-
-### 5. Build reports
-
-```bash
-python3 scripts/build_executive_roi_report.py --batch-id executive_batch_001
-python3 scripts/build_batch_consolidated_report.py --batch-id executive_batch_001
-```
+DecisionGuard is not trying to become yet another interface for launching experiments.
+Its strength is the **governance layer on top of the experimental decision**.
 
 ---
 
 ## Security and Path to Production
 
-DecisionGuard already demonstrates mature security/integrity choices, but production path is still in progress.
+The project already demonstrates a mature engineering attitude toward security and integrity, but the path to production is still in progress.
 
-Key directions:
+The main directions for further hardening are:
 
-- managed KMS / Vault instead of local demo keys;
-- corporate proxy / DLP for all LLM traffic;
-- further calibration of reasoning quality gates;
-- stricter release-candidate policy for fallback and cloud-preflight sign-off;
-- stronger human approval flows;
-- additional real-world validation;
-- extended reconciliation monitoring;
-- deeper separation of format compliance vs semantic depth in reasoning evaluation.
+- a stricter production security perimeter;
+- stronger policy gates and approval flows;
+- further calibration of reasoning quality;
+- a broader real-world validation base;
+- stronger operational monitoring and reconciliation.
 
 ---
 
-## Repository Structure
+## Discussion
 
-```text
-src/               Common runtime modules: security, failover, contracts, orchestration
-scripts/           Pipelines, gates, batch eval, report tooling
-configs/contracts/ Machine-readable contracts and policy
-domain_templates/  Externalized domain physics and policy configuration
-docs/              Methodology, runbooks, architecture specs
-tests/             Regression, fail-closed, and contract tests
-examples/          Demo guide + minimal public fixtures
-```
+This is currently an evaluation / portfolio repository.
 
----
-
-## Demo Artifacts
-
-Public `examples/` includes:
-
-- `DEMO_GUIDE.md` (+ `.sha256`);
-- minimal machine-checkable fixtures for reproducible checks.
-
-Detailed demo reports, internal historical corpora, and extended synthetic datasets are maintained in a private contour and are not published in public history.
-
----
-
-## Contributing
-
-This is currently an evaluation/portfolio repository.
-
-If you review the project and want to discuss architecture, integration, or roadmap, open a discussion or contact the maintainer directly.
+If you want to discuss the architectural direction, integration potential, or investment logic behind the project, contact the maintainer directly.
 
 ---
 
 ## License
 
-Internal/private evaluation repository unless explicitly stated otherwise.
+Internal / private evaluation repository unless explicitly stated otherwise.
